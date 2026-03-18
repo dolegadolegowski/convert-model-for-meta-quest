@@ -195,7 +195,11 @@ class WorkerLoop:
         report_path = self.report_dir / f"{claim.job_id}_{Path(claim.input_filename).stem}_report.json"
 
         self._retry(
-            lambda: self.client.download_job_file(claim=claim, destination=download_path),
+            lambda: self.client.download_job_file(
+                claim=claim,
+                destination=download_path,
+                worker_id=self.worker_id,
+            ),
             operation_name="download",
             attempts=5,
         )

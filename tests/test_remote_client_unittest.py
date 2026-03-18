@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from urllib import parse
 
 from quest_model_optimizer.remote_client import RemoteWorkerClient
 
@@ -142,7 +143,8 @@ class RemoteClientTests(unittest.TestCase):
 
         download_calls = [c for c in transport.calls if c[0] == "download"]
         self.assertEqual(len(download_calls), 1)
-        _, _, headers, _ = download_calls[0]
+        _, url, headers, _ = download_calls[0]
+        self.assertEqual(url, "https://server/file")
         self.assertNotIn("Authorization", headers)
 
     def test_same_origin_download_url_receives_bearer_token(self) -> None:
@@ -203,7 +205,50 @@ class RemoteClientTests(unittest.TestCase):
         download_calls = [c for c in transport.calls if c[0] == "download"]
         self.assertEqual(len(download_calls), 1)
         _, url, headers, _ = download_calls[0]
-        self.assertEqual(url, "https://example.org/api/v1/jobs/job-3/download")
+        parsed = parse.urlparse(url)
+        self.assertEqual(parsed.scheme, "https")
+        self.assertEqual(parsed.netloc, "example.org")
+        self.assertEqual(parsed.path, "/api/v1/jobs/job-3/download")
+        query = parse.parse_qs(parsed.query)
+        self.assertEqual(query.get("worker_id"), ["worker-a-id"])
+        self.assertIn("Authorization", headers)
+
+    def test_download_includes_lease_query_params_for_same_origin(self) -> None:
+        class LeaseTransport(FakeTransport):
+            def json_request(self, method, url, headers, payload=None):
+                if "/api/v1/jobs/claim" in url:
+                    return {
+                        "job": {
+                            "job_id": "job-4",
+                            "input_filename": "mesh.obj",
+                            "download_url": "/api/v1/jobs/job-4/download",
+                        },
+                        "lease_token": "lease-abc",
+                    }
+                return super().json_request(method, url, headers, payload)
+
+        transport = LeaseTransport()
+        client = RemoteWorkerClient(
+            server_url="https://example.org",
+            worker_token="super-secret",
+            worker_name="worker-a",
+            worker_id="worker-a-id",
+            transport=transport,
+        )
+        claim = client.claim_job(worker_id="worker-1", wait_seconds=10)
+        assert claim is not None
+        self.assertEqual(claim.lease_token, "lease-abc")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            destination = Path(temp_dir) / "mesh.obj"
+            client.download_job_file(claim, destination, worker_id="worker-1")
+
+        download_calls = [c for c in transport.calls if c[0] == "download"]
+        self.assertEqual(len(download_calls), 1)
+        _, url, headers, _ = download_calls[0]
+        parsed = parse.urlparse(url)
+        query = parse.parse_qs(parsed.query)
+        self.assertEqual(query.get("worker_id"), ["worker-1"])
+        self.assertEqual(query.get("lease_token"), ["lease-abc"])
         self.assertIn("Authorization", headers)
 
 

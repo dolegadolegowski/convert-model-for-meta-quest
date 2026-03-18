@@ -52,7 +52,7 @@ class FakeClient:
             payload={},
         )
 
-    def download_job_file(self, claim: JobClaim, destination: Path):
+    def download_job_file(self, claim: JobClaim, destination: Path, worker_id: str | None = None):
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text("mesh")
         return destination

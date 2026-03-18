@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.18
+
+- Added lease-aware download support for APIs requiring `worker_id` and `lease_token` query params.
+- Worker now extracts lease token from claim payload/response and appends it to same-origin download URLs.
+- Added regression tests covering lease token propagation and same-origin download query parameter handling.
+
 ## 0.17
 
 - Fixed worker download flow for relative job URLs returned by server claim endpoint.

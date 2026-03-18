@@ -181,6 +181,54 @@ class RemoteWorkerClient:
             return url_or_path
         return self._url(url_or_path)
 
+    @staticmethod
+    def _coerce_optional_string(value: Any) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
+    def _extract_lease_token(self, *payloads: dict[str, Any] | None) -> str | None:
+        direct_keys = ("lease_token", "leaseToken", "claim_token", "claimToken")
+        for payload in payloads:
+            if not isinstance(payload, dict):
+                continue
+            for key in direct_keys:
+                token = self._coerce_optional_string(payload.get(key))
+                if token:
+                    return token
+
+            lease = payload.get("lease")
+            if isinstance(lease, dict):
+                for key in ("token", "lease_token", "leaseToken", "claim_token", "claimToken"):
+                    token = self._coerce_optional_string(lease.get(key))
+                    if token:
+                        return token
+
+            claim = payload.get("claim")
+            if isinstance(claim, dict):
+                for key in direct_keys:
+                    token = self._coerce_optional_string(claim.get(key))
+                    if token:
+                        return token
+                lease = claim.get("lease")
+                if isinstance(lease, dict):
+                    for key in ("token", "lease_token", "leaseToken", "claim_token", "claimToken"):
+                        token = self._coerce_optional_string(lease.get(key))
+                        if token:
+                            return token
+        return None
+
+    def _append_query_params(self, url: str, params: dict[str, str | None]) -> str:
+        parsed = parse.urlparse(url)
+        query = dict(parse.parse_qsl(parsed.query, keep_blank_values=True))
+        for key, value in params.items():
+            normalized_value = self._coerce_optional_string(value)
+            if normalized_value and key not in query:
+                query[key] = normalized_value
+        updated_query = parse.urlencode(query)
+        return parse.urlunparse(parsed._replace(query=updated_query))
+
     def _download_headers_for_url(self, download_url: str) -> dict[str, str]:
         # Do not leak bearer token to external signed-storage URLs.
         same_origin = self._url_origin(download_url) == self._base_origin()
@@ -247,16 +295,32 @@ class RemoteWorkerClient:
 
         input_filename = str(job_payload.get("input_filename") or job_payload.get("filename") or f"{job_id}.obj")
         download_url = job_payload.get("download_url")
+        lease_token = self._extract_lease_token(
+            job_payload if isinstance(job_payload, dict) else None,
+            response if isinstance(response, dict) else None,
+        )
         return JobClaim(
             job_id=job_id,
             input_filename=input_filename,
             download_url=str(download_url) if download_url else None,
             payload=job_payload,
+            lease_token=lease_token,
         )
 
-    def download_job_file(self, claim: JobClaim, destination: Path) -> Path:
+    def download_job_file(self, claim: JobClaim, destination: Path, worker_id: str | None = None) -> Path:
         raw_download_url = claim.download_url or f"/api/v1/jobs/{claim.job_id}/download"
         download_url = self._normalize_url(raw_download_url)
+        if self._url_origin(download_url) == self._base_origin():
+            claim_worker_id = None
+            if isinstance(claim.payload, dict):
+                claim_worker_id = self._coerce_optional_string(claim.payload.get("worker_id"))
+            download_url = self._append_query_params(
+                download_url,
+                {
+                    "worker_id": worker_id or claim_worker_id or self.worker_id,
+                    "lease_token": claim.lease_token or self._extract_lease_token(claim.payload),
+                },
+            )
         self.transport.download_file(
             download_url,
             headers=self._download_headers_for_url(download_url),

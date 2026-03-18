@@ -19,6 +19,7 @@ class JobClaim:
     input_filename: str
     download_url: str | None
     payload: dict[str, Any]
+    lease_token: str | None = None
 
 
 @dataclass
