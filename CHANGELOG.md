@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9
+
+- Added strict final face-limit guard (`--fail-if-over-limit`).
+- Pipeline can now fail fast when decimation cannot reach required face cap.
+- Propagated strict mode through regression runner defaults.
+
 ## 0.8
 
 - Added Blender process timeout control (`--blender-timeout-seconds`).

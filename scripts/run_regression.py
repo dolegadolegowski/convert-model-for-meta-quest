@@ -30,6 +30,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--blender-exec", default="/Applications/Blender.app/Contents/MacOS/Blender")
     parser.add_argument("--face-limit", type=int, default=300000)
     parser.add_argument("--blender-timeout-seconds", type=int, default=1800)
+    parser.add_argument("--fail-if-over-limit", type=int, choices=[0, 1], default=1)
     parser.add_argument(
         "--jobs",
         type=int,
@@ -67,7 +68,13 @@ def evaluate_checks(report: dict, input_path: Path, output_path: Path, face_limi
     return checks
 
 
-def run_case(input_file: str, blender_exec: str, face_limit: int, blender_timeout_seconds: int) -> dict:
+def run_case(
+    input_file: str,
+    blender_exec: str,
+    face_limit: int,
+    blender_timeout_seconds: int,
+    fail_if_over_limit: int,
+) -> dict:
     input_path = Path(input_file).expanduser().resolve()
     output_path = OUTPUT_DIR / f"{input_path.stem}_optimized.glb"
     report_path = REPORT_DIR / f"{input_path.stem}_report.json"
@@ -90,6 +97,8 @@ def run_case(input_file: str, blender_exec: str, face_limit: int, blender_timeou
         blender_exec,
         "--blender-timeout-seconds",
         str(blender_timeout_seconds),
+        "--fail-if-over-limit",
+        str(fail_if_over_limit),
         "--log-level",
         "INFO",
     ]
@@ -210,6 +219,7 @@ def main() -> int:
                 blender_exec=args.blender_exec,
                 face_limit=args.face_limit,
                 blender_timeout_seconds=args.blender_timeout_seconds,
+                fail_if_over_limit=args.fail_if_over_limit,
             )
             for input_file in args.inputs
         ]
@@ -223,6 +233,7 @@ def main() -> int:
                     args.blender_exec,
                     args.face_limit,
                     args.blender_timeout_seconds,
+                    args.fail_if_over_limit,
                 )
                 for input_file in args.inputs
             ]

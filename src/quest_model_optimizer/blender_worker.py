@@ -48,6 +48,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--cleanup-degenerate-distance", type=float, default=1e-8)
     parser.add_argument("--min-object-faces-for-decimate", type=int, default=1500)
     parser.add_argument("--cleanup-skip-normal-recalc-above-faces", type=int, default=500000)
+    parser.add_argument("--fail-if-over-limit", type=int, choices=[0, 1], default=1)
     return parser.parse_args(argv)
 
 
@@ -267,6 +268,7 @@ def optimize(
     cleanup_degenerate_distance: float,
     min_object_faces_for_decimate: int,
     cleanup_skip_normal_recalc_above_faces: int,
+    fail_if_over_limit: bool,
 ) -> dict:
     start = time.time()
     report = {
@@ -351,6 +353,11 @@ def optimize(
     report["timings"]["export_seconds"] = round(time.time() - t2, 4)
 
     report["faces_final"] = report["faces_after_cleanup"]
+    report["face_limit_met"] = report["faces_final"] <= face_limit
+    if decimate.get("applied") and fail_if_over_limit and not report["face_limit_met"]:
+        raise RuntimeError(
+            f"Final face count {report['faces_final']} still exceeds limit {face_limit}"
+        )
     report["settings"] = {
         "max_decimate_passes": max_decimate_passes,
         "initial_target_safety": initial_target_safety,
@@ -359,6 +366,7 @@ def optimize(
         "cleanup_degenerate_distance": cleanup_degenerate_distance,
         "min_object_faces_for_decimate": min_object_faces_for_decimate,
         "cleanup_skip_normal_recalc_above_faces": cleanup_skip_normal_recalc_above_faces,
+        "fail_if_over_limit": bool(fail_if_over_limit),
     }
     report["status"] = "success"
     report["timings"]["total_seconds"] = round(time.time() - start, 4)
@@ -410,6 +418,7 @@ def main() -> int:
             cleanup_degenerate_distance=args.cleanup_degenerate_distance,
             min_object_faces_for_decimate=args.min_object_faces_for_decimate,
             cleanup_skip_normal_recalc_above_faces=args.cleanup_skip_normal_recalc_above_faces,
+            fail_if_over_limit=bool(args.fail_if_over_limit),
         )
         write_report(report_path, payload)
         log(

@@ -47,6 +47,7 @@ def run_blender_pipeline(
     min_object_faces_for_decimate: int,
     cleanup_skip_normal_recalc_above_faces: int,
     blender_timeout_seconds: int,
+    fail_if_over_limit: bool,
 ) -> dict[str, Any]:
     worker_script = Path(__file__).resolve().parent / "blender_worker.py"
     cmd = [
@@ -80,6 +81,8 @@ def run_blender_pipeline(
         str(min_object_faces_for_decimate),
         "--cleanup-skip-normal-recalc-above-faces",
         str(cleanup_skip_normal_recalc_above_faces),
+        "--fail-if-over-limit",
+        "1" if fail_if_over_limit else "0",
     ]
 
     try:

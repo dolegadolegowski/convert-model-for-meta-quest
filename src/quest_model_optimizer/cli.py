@@ -81,6 +81,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Timeout for a single Blender process execution",
     )
     parser.add_argument(
+        "--fail-if-over-limit",
+        type=int,
+        choices=[0, 1],
+        default=1,
+        help="Return error if final face count is still above the configured limit",
+    )
+    parser.add_argument(
         "--print-json",
         action="store_true",
         help="Print final report JSON summary on stdout",
@@ -128,6 +135,7 @@ def main(argv: list[str] | None = None) -> int:
     logger.info("Blender executable: %s", blender_exec)
     logger.info("Max decimate passes: %s", args.max_decimate_passes)
     logger.info("Blender timeout (s): %s", args.blender_timeout_seconds)
+    logger.info("Fail if over limit: %s", bool(args.fail_if_over_limit))
 
     result = run_blender_pipeline(
         input_path=input_path,
@@ -144,6 +152,7 @@ def main(argv: list[str] | None = None) -> int:
         min_object_faces_for_decimate=args.min_object_faces_for_decimate,
         cleanup_skip_normal_recalc_above_faces=args.cleanup_skip_normal_recalc_above_faces,
         blender_timeout_seconds=args.blender_timeout_seconds,
+        fail_if_over_limit=bool(args.fail_if_over_limit),
     )
 
     report = result.get("report", {})
