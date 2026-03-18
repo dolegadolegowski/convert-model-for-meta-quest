@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
 import statistics
 import subprocess
@@ -28,6 +29,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run integration regression suite")
     parser.add_argument("--blender-exec", default="/Applications/Blender.app/Contents/MacOS/Blender")
     parser.add_argument("--face-limit", type=int, default=300000)
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        default=1,
+        help="Number of model cases to run in parallel (default: 1)",
+    )
     parser.add_argument(
         "--inputs",
         nargs="*",
@@ -191,12 +198,26 @@ def main() -> int:
         "cases": [],
     }
 
-    overall_ok = True
-    for input_file in args.inputs:
-        case = run_case(input_file=input_file, blender_exec=args.blender_exec, face_limit=args.face_limit)
-        summary["cases"].append(case)
-        if case["returncode"] != 0 or not case["checks"]["all_passed"]:
-            overall_ok = False
+    jobs = max(1, int(args.jobs))
+
+    if jobs == 1:
+        cases = [
+            run_case(input_file=input_file, blender_exec=args.blender_exec, face_limit=args.face_limit)
+            for input_file in args.inputs
+        ]
+    else:
+        cases = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
+            futures = [
+                pool.submit(run_case, input_file, args.blender_exec, args.face_limit)
+                for input_file in args.inputs
+            ]
+            for future in concurrent.futures.as_completed(futures):
+                cases.append(future.result())
+        cases.sort(key=lambda c: c["input"])
+
+    summary["cases"] = cases
+    overall_ok = all(c["returncode"] == 0 and c["checks"]["all_passed"] for c in cases)
 
     summary["overall_ok"] = overall_ok
     summary["performance"] = build_performance_stats(summary["cases"])

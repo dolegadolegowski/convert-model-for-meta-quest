@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7
+
+- Added optional parallel regression execution via `--jobs`.
+- Kept deterministic default behavior with `--jobs 1`.
+- Validated parallel smoke test on selected attached models.
+
 ## 0.6
 
 - Added bottleneck timing capture (import/cleanup/export) in regression runner.

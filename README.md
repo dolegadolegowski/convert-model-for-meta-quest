@@ -84,6 +84,7 @@ python3 scripts/optimize_model.py \
 
 ```bash
 python3 scripts/run_regression.py \
+  --jobs 1 \
   --blender-exec /Applications/Blender.app/Contents/MacOS/Blender
 ```
 
@@ -91,6 +92,8 @@ Regression run writes:
 
 - `reports/regression_summary.json`
 - `reports/regression_summary.md` (includes bottleneck stage and aggregated timings)
+
+Parallel mode is available with `--jobs > 1` for independent files, but may increase memory pressure due multiple Blender processes.
 
 Lightweight unit tests without external dependencies:
 
