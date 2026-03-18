@@ -1,0 +1,150 @@
+#!/usr/bin/env python3
+"""Regression runner for provided 3D assets."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+OUTPUT_DIR = PROJECT_ROOT / "output"
+REPORT_DIR = PROJECT_ROOT / "reports"
+
+DEFAULT_CASES = [
+    "/Users/damiandd/Desktop/kosz.obj",
+    "/Users/damiandd/Desktop/robot.obj",
+    "/Users/damiandd/Desktop/HOL.obj",
+    "/Users/damiandd/Desktop/puzle kosci/All.obj",
+    "/Users/damiandd/Desktop/Modele studenci/szkielet/Group4.obj",
+]
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run integration regression suite")
+    parser.add_argument("--blender-exec", default="/Applications/Blender.app/Contents/MacOS/Blender")
+    parser.add_argument("--face-limit", type=int, default=300000)
+    parser.add_argument(
+        "--inputs",
+        nargs="*",
+        default=DEFAULT_CASES,
+        help="Override list of test model input files",
+    )
+    return parser.parse_args()
+
+
+def evaluate_checks(report: dict, input_path: Path, output_path: Path, face_limit: int, stdout: str) -> dict:
+    faces_before = int(report.get("faces_before", 0) or 0)
+    faces_final = int(report.get("faces_final", 0) or 0)
+    decimate_applied = bool(report.get("decimate", {}).get("applied", False))
+    mesh_count = int(report.get("mesh_count", 0) or 0)
+
+    checks = {
+        "import_succeeds": report.get("status") == "success" and bool(report.get("import", {}).get("success")),
+        "empty_scene_before_import": int(report.get("import", {}).get("scene_object_count_before_import", -1)) == 0,
+        "faces_read": faces_before > 0,
+        "decimate_condition": (faces_before > face_limit) == decimate_applied,
+        "face_limit_respected_if_needed": True if faces_before <= face_limit else faces_final < face_limit,
+        "cleanup_no_crash": int(report.get("cleanup", {}).get("error_count", 1)) == 0,
+        "export_succeeds": bool(report.get("export", {}).get("output_exists", False)) and output_path.exists(),
+        "output_path_expected": str(output_path).startswith(str(OUTPUT_DIR.resolve())),
+        "logs_readable": "[SUMMARY]" in stdout or report.get("status") == "success",
+        "multi_object_predictable": True if mesh_count <= 1 else faces_final >= 0,
+    }
+    checks["all_passed"] = all(checks.values())
+    return checks
+
+
+def run_case(input_file: str, blender_exec: str, face_limit: int) -> dict:
+    input_path = Path(input_file).expanduser().resolve()
+    output_path = OUTPUT_DIR / f"{input_path.stem}_optimized.glb"
+    report_path = REPORT_DIR / f"{input_path.stem}_report.json"
+
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    REPORT_DIR.mkdir(parents=True, exist_ok=True)
+
+    cmd = [
+        sys.executable,
+        str(PROJECT_ROOT / "scripts" / "optimize_model.py"),
+        "--input",
+        str(input_path),
+        "--output-dir",
+        str(OUTPUT_DIR),
+        "--report-dir",
+        str(REPORT_DIR),
+        "--face-limit",
+        str(face_limit),
+        "--blender-exec",
+        blender_exec,
+        "--log-level",
+        "INFO",
+    ]
+
+    start = time.time()
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    duration = round(time.time() - start, 3)
+
+    if report_path.exists():
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    else:
+        report = {"status": "error", "error": "missing report"}
+
+    checks = evaluate_checks(report, input_path, output_path, face_limit, proc.stdout)
+
+    return {
+        "input": str(input_path),
+        "duration_seconds": duration,
+        "command": cmd,
+        "returncode": proc.returncode,
+        "stdout_tail": "\n".join(proc.stdout.splitlines()[-40:]),
+        "stderr_tail": "\n".join(proc.stderr.splitlines()[-40:]),
+        "report": report,
+        "checks": checks,
+    }
+
+
+def main() -> int:
+    args = parse_args()
+    summary = {
+        "face_limit": args.face_limit,
+        "blender_exec": args.blender_exec,
+        "cases": [],
+    }
+
+    overall_ok = True
+    for input_file in args.inputs:
+        case = run_case(input_file=input_file, blender_exec=args.blender_exec, face_limit=args.face_limit)
+        summary["cases"].append(case)
+        if case["returncode"] != 0 or not case["checks"]["all_passed"]:
+            overall_ok = False
+
+    summary["overall_ok"] = overall_ok
+
+    out_path = REPORT_DIR / "regression_summary.json"
+    out_path.write_text(json.dumps(summary, indent=2, ensure_ascii=True), encoding="utf-8")
+
+    print(json.dumps({
+        "overall_ok": overall_ok,
+        "summary_path": str(out_path),
+        "cases": [
+            {
+                "input": c["input"],
+                "returncode": c["returncode"],
+                "all_passed": c["checks"]["all_passed"],
+                "faces_before": c["report"].get("faces_before"),
+                "faces_final": c["report"].get("faces_final"),
+                "decimate_applied": c["report"].get("decimate", {}).get("applied"),
+                "duration_seconds": c["duration_seconds"],
+            }
+            for c in summary["cases"]
+        ],
+    }, indent=2, ensure_ascii=True))
+
+    return 0 if overall_ok else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

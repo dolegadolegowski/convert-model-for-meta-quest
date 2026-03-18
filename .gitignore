@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.DS_Store
+.venv/
+.pytest_cache/
+output/
+reports/
+*.blend1
+*.blend2
