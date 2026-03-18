@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import statistics
 import subprocess
 import sys
 import time
@@ -93,6 +94,19 @@ def run_case(input_file: str, blender_exec: str, face_limit: int) -> dict:
         report = {"status": "error", "error": "missing report"}
 
     checks = evaluate_checks(report, input_path, output_path, face_limit, proc.stdout)
+    timings = report.get("timings", {})
+    stage_timings = {
+        "import_seconds": float(timings.get("import_seconds", 0.0) or 0.0),
+        "cleanup_seconds": float(timings.get("cleanup_seconds", 0.0) or 0.0),
+        "export_seconds": float(timings.get("export_seconds", 0.0) or 0.0),
+        "total_seconds_reported": float(timings.get("total_seconds", 0.0) or 0.0),
+    }
+    stage_pairs = [
+        ("import_seconds", stage_timings["import_seconds"]),
+        ("cleanup_seconds", stage_timings["cleanup_seconds"]),
+        ("export_seconds", stage_timings["export_seconds"]),
+    ]
+    bottleneck_stage, bottleneck_time = max(stage_pairs, key=lambda item: item[1])
 
     return {
         "input": str(input_path),
@@ -103,7 +117,70 @@ def run_case(input_file: str, blender_exec: str, face_limit: int) -> dict:
         "stderr_tail": "\n".join(proc.stderr.splitlines()[-40:]),
         "report": report,
         "checks": checks,
+        "timings": stage_timings,
+        "bottleneck_stage": bottleneck_stage,
+        "bottleneck_seconds": round(float(bottleneck_time), 4),
     }
+
+
+def build_performance_stats(cases: list[dict]) -> dict:
+    if not cases:
+        return {}
+
+    total_values = [float(c["timings"].get("total_seconds_reported", 0.0) or 0.0) for c in cases]
+    import_values = [float(c["timings"].get("import_seconds", 0.0) or 0.0) for c in cases]
+    cleanup_values = [float(c["timings"].get("cleanup_seconds", 0.0) or 0.0) for c in cases]
+    export_values = [float(c["timings"].get("export_seconds", 0.0) or 0.0) for c in cases]
+
+    return {
+        "average_total_seconds": round(statistics.mean(total_values), 4),
+        "max_total_seconds": round(max(total_values), 4),
+        "average_import_seconds": round(statistics.mean(import_values), 4),
+        "average_cleanup_seconds": round(statistics.mean(cleanup_values), 4),
+        "average_export_seconds": round(statistics.mean(export_values), 4),
+    }
+
+
+def write_markdown_summary(summary: dict, markdown_path: Path) -> None:
+    lines = [
+        "# Regression Summary",
+        "",
+        f"- overall_ok: `{summary.get('overall_ok')}`",
+        f"- face_limit: `{summary.get('face_limit')}`",
+        f"- blender_exec: `{summary.get('blender_exec')}`",
+        "",
+        "## Cases",
+    ]
+
+    for case in summary.get("cases", []):
+        report = case.get("report", {})
+        lines.extend(
+            [
+                f"- `{case['input']}`",
+                f"  - returncode: `{case['returncode']}`",
+                f"  - all_passed: `{case['checks'].get('all_passed')}`",
+                f"  - faces_before: `{report.get('faces_before')}`",
+                f"  - faces_final: `{report.get('faces_final')}`",
+                f"  - bottleneck: `{case.get('bottleneck_stage')}` ({case.get('bottleneck_seconds')}s)",
+            ]
+        )
+
+    perf = summary.get("performance", {})
+    if perf:
+        lines.extend(
+            [
+                "",
+                "## Performance",
+                "",
+                f"- average_total_seconds: `{perf.get('average_total_seconds')}`",
+                f"- max_total_seconds: `{perf.get('max_total_seconds')}`",
+                f"- average_import_seconds: `{perf.get('average_import_seconds')}`",
+                f"- average_cleanup_seconds: `{perf.get('average_cleanup_seconds')}`",
+                f"- average_export_seconds: `{perf.get('average_export_seconds')}`",
+            ]
+        )
+
+    markdown_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def main() -> int:
@@ -122,9 +199,11 @@ def main() -> int:
             overall_ok = False
 
     summary["overall_ok"] = overall_ok
+    summary["performance"] = build_performance_stats(summary["cases"])
 
     out_path = REPORT_DIR / "regression_summary.json"
     out_path.write_text(json.dumps(summary, indent=2, ensure_ascii=True), encoding="utf-8")
+    write_markdown_summary(summary, REPORT_DIR / "regression_summary.md")
 
     print(json.dumps({
         "overall_ok": overall_ok,

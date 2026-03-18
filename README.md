@@ -87,6 +87,11 @@ python3 scripts/run_regression.py \
   --blender-exec /Applications/Blender.app/Contents/MacOS/Blender
 ```
 
+Regression run writes:
+
+- `reports/regression_summary.json`
+- `reports/regression_summary.md` (includes bottleneck stage and aggregated timings)
+
 Lightweight unit tests without external dependencies:
 
 ```bash

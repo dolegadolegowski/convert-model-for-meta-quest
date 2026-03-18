@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6
+
+- Added bottleneck timing capture (import/cleanup/export) in regression runner.
+- Added aggregated performance statistics across all test cases.
+- Added Markdown summary output for quick review of regression + performance.
+
 ## 0.5
 
 - Added stdlib unit test suite and dedicated runner (`scripts/run_unit_tests.py`).
