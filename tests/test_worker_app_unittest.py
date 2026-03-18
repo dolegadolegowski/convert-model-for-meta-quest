@@ -23,6 +23,29 @@ class WorkerAppTests(unittest.TestCase):
         )
         self.assertEqual(rc, 1)
 
+    def test_legacy_cli_flags_are_accepted(self) -> None:
+        rc = main(
+            [
+                "--server-url",
+                "https://example.org",
+                "--token",
+                "abc",
+                "--worker-id",
+                "worker-legacy-1",
+                "--worker-name",
+                "Legacy Worker",
+                "--claim-wait",
+                "30",
+                "--heartbeat-interval",
+                "10",
+                "--lease-timeout",
+                "120",
+                "--gui",
+                "--dry-run",
+            ]
+        )
+        self.assertEqual(rc, 0)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

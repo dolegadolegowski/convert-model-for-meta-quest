@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.16
+
+- Added explicit `worker_id` support in register payload for API compatibility.
+- Added fallback to local `worker_id` when register response omits worker id.
+- Added legacy CLI compatibility flags (`--gui`, `--claim-wait`, `--heartbeat-interval`, `--lease-timeout`).
+- Verified registration flow no longer fails with HTTP 422 missing `worker_id`.
+
 ## 0.15
 
 - Added graceful fallback to headless mode when Tkinter GUI is unavailable (`_tkinter` missing).

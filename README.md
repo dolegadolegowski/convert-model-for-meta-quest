@@ -100,6 +100,7 @@ Worker configuration via environment variables:
 - `SERVER_URL`
 - `WORKER_TOKEN`
 - `WORKER_NAME`
+- `WORKER_ID` (optional override, default `worker-<hostname>`)
 
 Security defaults:
 
@@ -114,6 +115,7 @@ Run worker with GUI:
 python3 scripts/run_worker.py \
   --server-url https://your-server.example \
   --token YOUR_TOKEN \
+  --worker-id worker-$(hostname)-$(date +%s) \
   --worker-name mac-mini-worker-01 \
   --max-download-bytes 1073741824 \
   --with-gui
@@ -125,6 +127,7 @@ Run worker headless:
 python3 scripts/run_worker.py \
   --server-url https://your-server.example \
   --token YOUR_TOKEN \
+  --worker-id worker-$(hostname)-$(date +%s) \
   --worker-name mac-mini-worker-01 \
   --max-download-bytes 1073741824 \
   --no-gui
@@ -135,6 +138,12 @@ Dry-run for local validation:
 ```bash
 python3 scripts/run_worker.py --no-gui --dry-run --worker-name local-test
 ```
+
+Legacy CLI compatibility:
+
+- `--gui` is accepted as alias of `--with-gui`.
+- `--claim-wait` is accepted as alias of `--poll-wait`.
+- `--heartbeat-interval` and `--lease-timeout` are accepted and forwarded as register hints.
 
 GUI window displays:
 

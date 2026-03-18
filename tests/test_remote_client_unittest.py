@@ -36,6 +36,7 @@ class RemoteClientTests(unittest.TestCase):
             server_url="https://example.org",
             worker_token="token",
             worker_name="worker-a",
+            worker_id="worker-a-id",
             transport=transport,
         )
 
@@ -64,6 +65,29 @@ class RemoteClientTests(unittest.TestCase):
 
         self.assertEqual(response, {"ok": True})
 
+    def test_register_falls_back_to_local_worker_id_when_response_missing_id(self) -> None:
+        class NoIdTransport(FakeTransport):
+            def json_request(self, method, url, headers, payload=None):
+                self.calls.append(("json", method, url, payload))
+                if url.endswith("/api/v1/workers/register"):
+                    return {"heartbeat_interval": 10}
+                return super().json_request(method, url, headers, payload)
+
+        transport = NoIdTransport()
+        client = RemoteWorkerClient(
+            server_url="https://example.org",
+            worker_token="token",
+            worker_name="worker-a",
+            worker_id="worker-local-123",
+            transport=transport,
+        )
+        session = client.register_worker()
+        self.assertEqual(session.worker_id, "worker-local-123")
+        register_calls = [c for c in transport.calls if c[0] == "json" and c[2].endswith("/api/v1/workers/register")]
+        self.assertEqual(len(register_calls), 1)
+        payload = register_calls[0][3]
+        self.assertEqual(payload["worker_id"], "worker-local-123")
+
     def test_claim_none_on_empty_payload(self) -> None:
         class EmptyClaimTransport(FakeTransport):
             def json_request(self, method, url, headers, payload=None):
@@ -75,6 +99,7 @@ class RemoteClientTests(unittest.TestCase):
             server_url="https://example.org",
             worker_token="token",
             worker_name="worker-a",
+            worker_id="worker-a-id",
             transport=EmptyClaimTransport(),
         )
         self.assertIsNone(client.claim_job(worker_id="w", wait_seconds=5))
@@ -85,6 +110,7 @@ class RemoteClientTests(unittest.TestCase):
                 server_url="http://example.org",
                 worker_token="token",
                 worker_name="worker-a",
+                worker_id="worker-a-id",
                 transport=FakeTransport(),
             )
 
@@ -93,6 +119,7 @@ class RemoteClientTests(unittest.TestCase):
             server_url="http://localhost:8000",
             worker_token="token",
             worker_name="worker-a",
+            worker_id="worker-a-id",
             transport=FakeTransport(),
             allow_insecure_http=True,
         )
@@ -104,6 +131,7 @@ class RemoteClientTests(unittest.TestCase):
             server_url="https://safe.example",
             worker_token="super-secret",
             worker_name="worker-a",
+            worker_id="worker-a-id",
             transport=transport,
         )
         claim = client.claim_job(worker_id="worker-1", wait_seconds=10)
@@ -133,6 +161,7 @@ class RemoteClientTests(unittest.TestCase):
             server_url="https://example.org",
             worker_token="super-secret",
             worker_name="worker-a",
+            worker_id="worker-a-id",
             transport=transport,
         )
         claim = client.claim_job(worker_id="worker-1", wait_seconds=10)

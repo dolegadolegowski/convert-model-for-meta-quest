@@ -132,9 +132,12 @@ class RemoteWorkerClient:
         server_url: str,
         worker_token: str,
         worker_name: str,
+        worker_id: str,
         timeout: int = 60,
         transport: TransportProtocol | None = None,
         allow_insecure_http: bool = False,
+        heartbeat_interval_hint: int | None = None,
+        lease_timeout_hint: int | None = None,
     ) -> None:
         normalized_url = server_url.rstrip("/")
         parsed = parse.urlparse(normalized_url)
@@ -146,7 +149,10 @@ class RemoteWorkerClient:
         self.server_url = normalized_url
         self.worker_token = worker_token
         self.worker_name = worker_name
+        self.worker_id = worker_id
         self.allow_insecure_http = allow_insecure_http
+        self.heartbeat_interval_hint = heartbeat_interval_hint
+        self.lease_timeout_hint = lease_timeout_hint
         self.transport: TransportProtocol = transport or UrllibTransport(timeout=timeout)
 
     def _url(self, path: str) -> str:
@@ -182,9 +188,14 @@ class RemoteWorkerClient:
 
     def register_worker(self) -> WorkerSession:
         payload = {
+            "worker_id": self.worker_id,
             "worker_name": self.worker_name,
             "capabilities": {"pipeline": "ConvertModelForMetaQuest", "format": "GLB"},
         }
+        if self.heartbeat_interval_hint is not None:
+            payload["heartbeat_interval"] = int(self.heartbeat_interval_hint)
+        if self.lease_timeout_hint is not None:
+            payload["lease_timeout"] = int(self.lease_timeout_hint)
         response = self.transport.json_request(
             method="POST",
             url=self._url("/api/v1/workers/register"),
@@ -192,7 +203,7 @@ class RemoteWorkerClient:
             payload=payload,
         ) or {}
 
-        worker_id = str(response.get("worker_id") or response.get("id") or "")
+        worker_id = str(response.get("worker_id") or response.get("id") or self.worker_id or "")
         if not worker_id:
             raise RuntimeError("register response missing worker_id")
         heartbeat_interval = int(response.get("heartbeat_interval") or 15)

@@ -20,13 +20,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--server-url", default=os.getenv("SERVER_URL"), help="HTTPS URL of Medical 3D Models API")
     parser.add_argument("--token", default=os.getenv("WORKER_TOKEN"), help="Worker auth token")
     parser.add_argument(
+        "--worker-id",
+        default=os.getenv("WORKER_ID") or f"worker-{platform.node()}",
+        help="Stable worker identifier used during register/heartbeat/claim",
+    )
+    parser.add_argument(
         "--worker-name",
         default=os.getenv("WORKER_NAME") or platform.node() or "cmq-worker",
         help="Human-readable worker name",
     )
 
     gui_group = parser.add_mutually_exclusive_group()
-    gui_group.add_argument("--with-gui", action="store_true", help="Run with small GUI status window")
+    gui_group.add_argument("--with-gui", "--gui", dest="with_gui", action="store_true", help="Run with small GUI status window")
     gui_group.add_argument("--no-gui", action="store_true", help="Run headless (console logs only)")
 
     parser.add_argument("--work-dir", default="worker_runtime", help="Directory for downloaded/processed files")
@@ -35,7 +40,19 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Allow http:// server URL (for local development only)",
     )
-    parser.add_argument("--poll-wait", type=int, default=30, help="Long-poll wait seconds")
+    parser.add_argument("--poll-wait", "--claim-wait", dest="poll_wait", type=int, default=30, help="Long-poll wait seconds")
+    parser.add_argument(
+        "--heartbeat-interval",
+        type=int,
+        default=None,
+        help="Optional register hint for server-preferred heartbeat interval (compat flag)",
+    )
+    parser.add_argument(
+        "--lease-timeout",
+        type=int,
+        default=None,
+        help="Optional register hint for server lease timeout (compat flag)",
+    )
     parser.add_argument(
         "--max-download-bytes",
         type=int,
@@ -89,8 +106,11 @@ def main(argv: list[str] | None = None) -> int:
             server_url=args.server_url,
             worker_token=args.token,
             worker_name=args.worker_name,
+            worker_id=args.worker_id,
             timeout=max(10, int(args.poll_wait) + 30),
             allow_insecure_http=bool(args.allow_insecure_http),
+            heartbeat_interval_hint=args.heartbeat_interval,
+            lease_timeout_hint=args.lease_timeout,
         )
     except ValueError as exc:
         logger.error("Invalid worker configuration: %s", exc)
