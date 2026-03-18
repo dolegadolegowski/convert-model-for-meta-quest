@@ -346,10 +346,22 @@ class RemoteWorkerClient:
         if not lease_token:
             raise RuntimeError(f"missing lease_token for upload_result job_id={claim.job_id}")
 
+        source_checksum = (
+            self._coerce_optional_string(claim.payload.get("source_checksum"))
+            or self._coerce_optional_string(claim.payload.get("source_sha256"))
+            or self._coerce_optional_string(claim.payload.get("input_sha256"))
+            or self._coerce_optional_string(claim.payload.get("sha256"))
+        )
+        if not source_checksum:
+            raise RuntimeError(f"missing source checksum for upload_result job_id={claim.job_id}")
+
         metadata_payload: dict[str, Any] = {
             "job_id": claim.job_id,
             "input_filename": claim.input_filename,
             "summary": summary,
+            "source_checksum": source_checksum,
+            "source_sha256": source_checksum,
+            "input_sha256": source_checksum,
         }
         try:
             metadata_payload["report"] = json.loads(report_file.read_text(encoding="utf-8"))

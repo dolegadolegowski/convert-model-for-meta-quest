@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -22,6 +23,7 @@ class FakeTransport:
                 "input_filename": "HOL.obj",
                 "download_url": "https://server/file",
                 "lease_token": "lease-1",
+                "sha256": "source-checksum-1",
             }
         return {"ok": True}
 
@@ -76,6 +78,8 @@ class RemoteClientTests(unittest.TestCase):
         self.assertEqual(fields.get("lease_token"), "lease-1")
         self.assertIn("metadata_json", fields)
         self.assertIn("result_file", files)
+        metadata = json.loads(fields["metadata_json"])
+        self.assertEqual(metadata.get("source_checksum"), "source-checksum-1")
 
     def test_register_falls_back_to_local_worker_id_when_response_missing_id(self) -> None:
         class NoIdTransport(FakeTransport):
@@ -150,6 +154,44 @@ class RemoteClientTests(unittest.TestCase):
                 return super().json_request(method, url, headers, payload)
 
         transport = NoLeaseTransport()
+        client = RemoteWorkerClient(
+            server_url="https://example.org",
+            worker_token="token",
+            worker_name="worker-a",
+            worker_id="worker-a-id",
+            transport=transport,
+        )
+        claim = client.claim_job(worker_id="worker-1", wait_seconds=10)
+        assert claim is not None
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            output_file = root / "out.glb"
+            report_file = root / "report.json"
+            output_file.write_bytes(b"binary")
+            report_file.write_text("{}", encoding="utf-8")
+            with self.assertRaises(RuntimeError):
+                client.upload_result(
+                    worker_id="worker-1",
+                    claim=claim,
+                    optimized_file=output_file,
+                    report_file=report_file,
+                    summary="mesh.obj: 10 -> 8 (decimate)",
+                )
+
+    def test_upload_result_requires_source_checksum(self) -> None:
+        class NoChecksumTransport(FakeTransport):
+            def json_request(self, method, url, headers, payload=None):
+                if "/api/v1/jobs/claim" in url:
+                    return {
+                        "job_id": "job-10",
+                        "input_filename": "mesh.obj",
+                        "download_url": "https://example.org/file",
+                        "lease_token": "lease-10",
+                    }
+                return super().json_request(method, url, headers, payload)
+
+        transport = NoChecksumTransport()
         client = RemoteWorkerClient(
             server_url="https://example.org",
             worker_token="token",

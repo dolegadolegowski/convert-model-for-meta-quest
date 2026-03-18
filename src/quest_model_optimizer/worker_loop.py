@@ -13,7 +13,7 @@ from typing import Protocol
 from .remote_client import RemoteWorkerClient
 from .worker_models import JobClaim
 from .worker_processor import PipelineProcessor
-from .worker_security import validate_download_file
+from .worker_security import compute_sha256, validate_download_file
 from .worker_summary import build_geometry_summary
 
 
@@ -215,6 +215,10 @@ class WorkerLoop:
                 expected_sha256=str(expected_sha256) if expected_sha256 else None,
                 max_bytes=int(self.config.max_download_bytes),
             )
+            source_sha256 = compute_sha256(download_path).lower()
+            claim.payload.setdefault("source_checksum", source_sha256)
+            claim.payload.setdefault("source_sha256", source_sha256)
+            claim.payload.setdefault("input_sha256", source_sha256)
         except Exception as exc:
             error_message = f"download validation failed: {exc}"
             self.logger.error("Job %s failed security validation: %s", claim.job_id, error_message)

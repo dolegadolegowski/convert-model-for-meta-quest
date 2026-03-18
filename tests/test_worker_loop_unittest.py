@@ -34,6 +34,7 @@ class FakeClient:
         self.claim_count = 0
         self.upload_calls = 0
         self.failure_calls = 0
+        self.last_upload_claim: JobClaim | None = None
 
     def register_worker(self) -> WorkerSession:
         return WorkerSession(worker_id="worker-1", heartbeat_interval=60)
@@ -59,6 +60,7 @@ class FakeClient:
 
     def upload_result(self, worker_id: str, claim: JobClaim, optimized_file: Path, report_file: Path, summary: str):
         self.upload_calls += 1
+        self.last_upload_claim = claim
         return {"ok": True}
 
     def report_failure(self, worker_id: str, claim: JobClaim, error_message: str):
@@ -115,6 +117,8 @@ class WorkerLoopTests(unittest.TestCase):
 
         self.assertEqual(rc, 0)
         self.assertEqual(client.upload_calls, 1)
+        assert client.last_upload_claim is not None
+        self.assertIn("source_checksum", client.last_upload_claim.payload)
         self.assertTrue(any("Upload status: SUCCESS" in msg for msg in observer.upload))
         self.assertTrue(any("HOL.obj" in msg for msg in observer.geometry))
 

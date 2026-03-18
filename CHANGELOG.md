@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.21
+
+- Added source checksum propagation for worker uploads (`source_checksum`/`source_sha256`/`input_sha256`) in `metadata_json`.
+- Worker now computes SHA256 of downloaded input and stores it in claim metadata before upload.
+- Added upload guard for missing source checksum and unit tests covering checksum metadata contract.
+
 ## 0.20
 
 - Updated worker upload contract for Medical 3D Models API: multipart now sends `lease_token`, `metadata_json`, and `result_file`.
