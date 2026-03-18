@@ -39,6 +39,11 @@ def run_blender_pipeline(
     face_limit: int,
     blender_exec: str,
     log_level: str,
+    max_decimate_passes: int,
+    initial_target_safety: float,
+    correction_target_safety: float,
+    cleanup_merge_distance: float,
+    cleanup_degenerate_distance: float,
 ) -> dict[str, Any]:
     worker_script = Path(__file__).resolve().parent / "blender_worker.py"
     cmd = [
@@ -58,6 +63,16 @@ def run_blender_pipeline(
         str(face_limit),
         "--log-level",
         log_level.upper(),
+        "--max-decimate-passes",
+        str(max_decimate_passes),
+        "--initial-target-safety",
+        str(initial_target_safety),
+        "--correction-target-safety",
+        str(correction_target_safety),
+        "--cleanup-merge-distance",
+        str(cleanup_merge_distance),
+        "--cleanup-degenerate-distance",
+        str(cleanup_degenerate_distance),
     ]
 
     proc = subprocess.run(cmd, capture_output=True, text=True)

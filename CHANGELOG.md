@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2
+
+- Added configurable decimation and cleanup tuning parameters in CLI.
+- Added pass-limit control for correction decimation.
+- Added settings snapshot to JSON execution report for reproducibility.
+
 ## 0.1
 
 - Added initial project scaffold.

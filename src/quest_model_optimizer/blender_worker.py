@@ -41,6 +41,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--report", required=True)
     parser.add_argument("--face-limit", type=int, default=300000)
     parser.add_argument("--log-level", default="INFO")
+    parser.add_argument("--max-decimate-passes", type=int, default=4)
+    parser.add_argument("--initial-target-safety", type=float, default=0.995)
+    parser.add_argument("--correction-target-safety", type=float, default=0.99)
+    parser.add_argument("--cleanup-merge-distance", type=float, default=1e-6)
+    parser.add_argument("--cleanup-degenerate-distance", type=float, default=1e-8)
     return parser.parse_args(argv)
 
 
@@ -193,12 +198,18 @@ def cleanup_mesh_object(obj, merge_dist: float, degenerate_dist: float) -> dict:
     return stats
 
 
-def cleanup_scene_meshes(objs: list) -> dict:
+def cleanup_scene_meshes(objs: list, merge_dist: float, degenerate_dist: float) -> dict:
     cleanup_stats = []
     errors = []
     for obj in objs:
         try:
-            cleanup_stats.append(cleanup_mesh_object(obj, merge_dist=1e-6, degenerate_dist=1e-8))
+            cleanup_stats.append(
+                cleanup_mesh_object(
+                    obj,
+                    merge_dist=merge_dist,
+                    degenerate_dist=degenerate_dist,
+                )
+            )
         except Exception as exc:  # pragma: no cover - blender runtime
             errors.append({"object": obj.name, "error": str(exc)})
 
@@ -223,7 +234,16 @@ def export_glb(output_path: Path) -> dict:
     }
 
 
-def optimize(input_path: Path, output_path: Path, face_limit: int) -> dict:
+def optimize(
+    input_path: Path,
+    output_path: Path,
+    face_limit: int,
+    max_decimate_passes: int,
+    initial_target_safety: float,
+    correction_target_safety: float,
+    cleanup_merge_distance: float,
+    cleanup_degenerate_distance: float,
+) -> dict:
     start = time.time()
     report = {
         "status": "error",
@@ -251,16 +271,24 @@ def optimize(input_path: Path, output_path: Path, face_limit: int) -> dict:
 
     if should_decimate(faces_before, face_limit):
         decimate["applied"] = True
-        ratio = compute_initial_ratio(faces_before, face_limit, safety=0.995)
+        ratio = compute_initial_ratio(
+            faces_before,
+            face_limit,
+            safety=initial_target_safety,
+        )
         pass_info = apply_decimate_pass(objs, ratio=ratio, pass_index=1)
         faces_after = count_faces(objs)
         pass_info["faces_after_pass"] = faces_after
         decimate["passes"].append(pass_info)
 
-        max_corrections = 3
+        max_corrections = max(0, max_decimate_passes - 1)
         pass_idx = 2
         while faces_after > face_limit and pass_idx <= max_corrections + 1:
-            correction_ratio = compute_correction_ratio(faces_after, face_limit, safety=0.99)
+            correction_ratio = compute_correction_ratio(
+                faces_after,
+                face_limit,
+                safety=correction_target_safety,
+            )
             correction_info = apply_decimate_pass(objs, ratio=correction_ratio, pass_index=pass_idx)
             faces_after = count_faces(objs)
             correction_info["faces_after_pass"] = faces_after
@@ -271,7 +299,11 @@ def optimize(input_path: Path, output_path: Path, face_limit: int) -> dict:
     report["faces_after_decimate"] = count_faces(objs)
 
     t1 = time.time()
-    report["cleanup"] = cleanup_scene_meshes(objs)
+    report["cleanup"] = cleanup_scene_meshes(
+        objs,
+        merge_dist=cleanup_merge_distance,
+        degenerate_dist=cleanup_degenerate_distance,
+    )
     report["timings"]["cleanup_seconds"] = round(time.time() - t1, 4)
 
     report["faces_after_cleanup"] = count_faces(objs)
@@ -281,6 +313,13 @@ def optimize(input_path: Path, output_path: Path, face_limit: int) -> dict:
     report["timings"]["export_seconds"] = round(time.time() - t2, 4)
 
     report["faces_final"] = report["faces_after_cleanup"]
+    report["settings"] = {
+        "max_decimate_passes": max_decimate_passes,
+        "initial_target_safety": initial_target_safety,
+        "correction_target_safety": correction_target_safety,
+        "cleanup_merge_distance": cleanup_merge_distance,
+        "cleanup_degenerate_distance": cleanup_degenerate_distance,
+    }
     report["status"] = "success"
     report["timings"]["total_seconds"] = round(time.time() - start, 4)
     return report
@@ -320,7 +359,16 @@ def main() -> int:
         return 2
 
     try:
-        payload = optimize(input_path=input_path, output_path=output_path, face_limit=args.face_limit)
+        payload = optimize(
+            input_path=input_path,
+            output_path=output_path,
+            face_limit=args.face_limit,
+            max_decimate_passes=args.max_decimate_passes,
+            initial_target_safety=args.initial_target_safety,
+            correction_target_safety=args.correction_target_safety,
+            cleanup_merge_distance=args.cleanup_merge_distance,
+            cleanup_degenerate_distance=args.cleanup_degenerate_distance,
+        )
         write_report(report_path, payload)
         log(
             "SUMMARY",

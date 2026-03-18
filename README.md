@@ -61,6 +61,11 @@ python3 scripts/optimize_model.py \
   --output-dir output \
   --report-dir reports \
   --face-limit 300000 \
+  --max-decimate-passes 4 \
+  --initial-target-safety 0.995 \
+  --correction-target-safety 0.99 \
+  --cleanup-merge-distance 1e-6 \
+  --cleanup-degenerate-distance 1e-8 \
   --blender-exec /Applications/Blender.app/Contents/MacOS/Blender
 ```
 

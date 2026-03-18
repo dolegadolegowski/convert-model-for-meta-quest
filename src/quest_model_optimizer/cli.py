@@ -33,6 +33,36 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--blender-exec", help="Path to Blender executable")
     parser.add_argument("--log-level", default="INFO")
     parser.add_argument(
+        "--max-decimate-passes",
+        type=int,
+        default=4,
+        help="Maximum decimate passes (1 initial + correction passes)",
+    )
+    parser.add_argument(
+        "--initial-target-safety",
+        type=float,
+        default=0.995,
+        help="Initial target multiplier used for first decimate ratio calculation",
+    )
+    parser.add_argument(
+        "--correction-target-safety",
+        type=float,
+        default=0.99,
+        help="Target multiplier used in correction decimate passes",
+    )
+    parser.add_argument(
+        "--cleanup-merge-distance",
+        type=float,
+        default=1e-6,
+        help="Merge-by-distance threshold for cleanup",
+    )
+    parser.add_argument(
+        "--cleanup-degenerate-distance",
+        type=float,
+        default=1e-8,
+        help="Degenerate dissolve threshold for cleanup",
+    )
+    parser.add_argument(
         "--print-json",
         action="store_true",
         help="Print final report JSON summary on stdout",
@@ -78,6 +108,7 @@ def main(argv: list[str] | None = None) -> int:
     logger.info("Report: %s", report_path)
     logger.info("Face limit: %s", args.face_limit)
     logger.info("Blender executable: %s", blender_exec)
+    logger.info("Max decimate passes: %s", args.max_decimate_passes)
 
     result = run_blender_pipeline(
         input_path=input_path,
@@ -86,6 +117,11 @@ def main(argv: list[str] | None = None) -> int:
         face_limit=args.face_limit,
         blender_exec=blender_exec,
         log_level=args.log_level,
+        max_decimate_passes=args.max_decimate_passes,
+        initial_target_safety=args.initial_target_safety,
+        correction_target_safety=args.correction_target_safety,
+        cleanup_merge_distance=args.cleanup_merge_distance,
+        cleanup_degenerate_distance=args.cleanup_degenerate_distance,
     )
 
     report = result.get("report", {})
