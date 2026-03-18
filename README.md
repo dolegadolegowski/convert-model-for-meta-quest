@@ -68,6 +68,7 @@ python3 scripts/optimize_model.py \
   --min-object-faces-for-decimate 1500 \
   --cleanup-merge-distance 1e-6 \
   --cleanup-degenerate-distance 1e-8 \
+  --cleanup-skip-normal-recalc-above-faces 500000 \
   --blender-exec /Applications/Blender.app/Contents/MacOS/Blender
 ```
 

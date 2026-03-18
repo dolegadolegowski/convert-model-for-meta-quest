@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4
+
+- Added cleanup guard to skip normal recalculation on very large meshes.
+- Exposed `--cleanup-skip-normal-recalc-above-faces` in CLI and report settings.
+- Improved cleanup reporting with explicit normal-recalc status.
+
 ## 0.3
 
 - Added per-object decimation ratio planning for multi-mesh scenes.

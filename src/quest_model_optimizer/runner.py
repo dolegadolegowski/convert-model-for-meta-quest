@@ -45,6 +45,7 @@ def run_blender_pipeline(
     cleanup_merge_distance: float,
     cleanup_degenerate_distance: float,
     min_object_faces_for_decimate: int,
+    cleanup_skip_normal_recalc_above_faces: int,
 ) -> dict[str, Any]:
     worker_script = Path(__file__).resolve().parent / "blender_worker.py"
     cmd = [
@@ -76,6 +77,8 @@ def run_blender_pipeline(
         str(cleanup_degenerate_distance),
         "--min-object-faces-for-decimate",
         str(min_object_faces_for_decimate),
+        "--cleanup-skip-normal-recalc-above-faces",
+        str(cleanup_skip_normal_recalc_above_faces),
     ]
 
     proc = subprocess.run(cmd, capture_output=True, text=True)

@@ -47,6 +47,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--cleanup-merge-distance", type=float, default=1e-6)
     parser.add_argument("--cleanup-degenerate-distance", type=float, default=1e-8)
     parser.add_argument("--min-object-faces-for-decimate", type=int, default=1500)
+    parser.add_argument("--cleanup-skip-normal-recalc-above-faces", type=int, default=500000)
     return parser.parse_args(argv)
 
 
@@ -159,7 +160,12 @@ def apply_decimate_pass(objs: list, ratio_map: dict[str, float], pass_index: int
     }
 
 
-def cleanup_mesh_object(obj, merge_dist: float, degenerate_dist: float) -> dict:
+def cleanup_mesh_object(
+    obj,
+    merge_dist: float,
+    degenerate_dist: float,
+    skip_normal_recalc_above_faces: int,
+) -> dict:
     mesh = obj.data
     bm = bmesh.new()
     bm.from_mesh(mesh)
@@ -186,8 +192,14 @@ def cleanup_mesh_object(obj, merge_dist: float, degenerate_dist: float) -> dict:
         stats["removed_loose_verts"] = len(loose_verts)
         bmesh.ops.delete(bm, geom=loose_verts, context="VERTS")
 
-    if bm.faces:
+    face_count_before_normals = len(bm.faces)
+    if face_count_before_normals == 0:
+        stats["normal_recalc"] = "skipped_no_faces"
+    elif face_count_before_normals <= skip_normal_recalc_above_faces:
         bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        stats["normal_recalc"] = "performed"
+    else:
+        stats["normal_recalc"] = "skipped_large_mesh"
 
     bm.to_mesh(mesh)
     bm.free()
@@ -202,7 +214,12 @@ def cleanup_mesh_object(obj, merge_dist: float, degenerate_dist: float) -> dict:
     return stats
 
 
-def cleanup_scene_meshes(objs: list, merge_dist: float, degenerate_dist: float) -> dict:
+def cleanup_scene_meshes(
+    objs: list,
+    merge_dist: float,
+    degenerate_dist: float,
+    skip_normal_recalc_above_faces: int,
+) -> dict:
     cleanup_stats = []
     errors = []
     for obj in objs:
@@ -212,6 +229,7 @@ def cleanup_scene_meshes(objs: list, merge_dist: float, degenerate_dist: float) 
                     obj,
                     merge_dist=merge_dist,
                     degenerate_dist=degenerate_dist,
+                    skip_normal_recalc_above_faces=skip_normal_recalc_above_faces,
                 )
             )
         except Exception as exc:  # pragma: no cover - blender runtime
@@ -248,6 +266,7 @@ def optimize(
     cleanup_merge_distance: float,
     cleanup_degenerate_distance: float,
     min_object_faces_for_decimate: int,
+    cleanup_skip_normal_recalc_above_faces: int,
 ) -> dict:
     start = time.time()
     report = {
@@ -321,6 +340,7 @@ def optimize(
         objs,
         merge_dist=cleanup_merge_distance,
         degenerate_dist=cleanup_degenerate_distance,
+        skip_normal_recalc_above_faces=cleanup_skip_normal_recalc_above_faces,
     )
     report["timings"]["cleanup_seconds"] = round(time.time() - t1, 4)
 
@@ -338,6 +358,7 @@ def optimize(
         "cleanup_merge_distance": cleanup_merge_distance,
         "cleanup_degenerate_distance": cleanup_degenerate_distance,
         "min_object_faces_for_decimate": min_object_faces_for_decimate,
+        "cleanup_skip_normal_recalc_above_faces": cleanup_skip_normal_recalc_above_faces,
     }
     report["status"] = "success"
     report["timings"]["total_seconds"] = round(time.time() - start, 4)
@@ -388,6 +409,7 @@ def main() -> int:
             cleanup_merge_distance=args.cleanup_merge_distance,
             cleanup_degenerate_distance=args.cleanup_degenerate_distance,
             min_object_faces_for_decimate=args.min_object_faces_for_decimate,
+            cleanup_skip_normal_recalc_above_faces=args.cleanup_skip_normal_recalc_above_faces,
         )
         write_report(report_path, payload)
         log(
