@@ -105,6 +105,7 @@ Security defaults:
 
 - Worker enforces `https://` server URL by default.
 - For local development only, `http://` can be enabled using `--allow-insecure-http`.
+- Bearer token is attached only for same-origin download endpoints; external signed URLs are fetched without auth header.
 
 Run worker with GUI:
 

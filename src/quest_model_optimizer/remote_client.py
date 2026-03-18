@@ -160,6 +160,26 @@ class RemoteWorkerClient:
             "User-Agent": "ConvertModelForMetaQuest-Worker/0.11",
         }
 
+    def _base_origin(self) -> str:
+        parsed = parse.urlparse(self.server_url)
+        return f"{parsed.scheme}://{parsed.netloc}".lower()
+
+    @staticmethod
+    def _url_origin(url: str) -> str:
+        parsed = parse.urlparse(url)
+        return f"{parsed.scheme}://{parsed.netloc}".lower()
+
+    def _download_headers_for_url(self, download_url: str) -> dict[str, str]:
+        # Do not leak bearer token to external signed-storage URLs.
+        same_origin = self._url_origin(download_url) == self._base_origin()
+        headers = {
+            "Accept": "application/octet-stream",
+            "User-Agent": "ConvertModelForMetaQuest-Worker/0.11",
+        }
+        if same_origin:
+            headers["Authorization"] = f"Bearer {self.worker_token}"
+        return headers
+
     def register_worker(self) -> WorkerSession:
         payload = {
             "worker_name": self.worker_name,
@@ -219,7 +239,11 @@ class RemoteWorkerClient:
 
     def download_job_file(self, claim: JobClaim, destination: Path) -> Path:
         download_url = claim.download_url or self._url(f"/api/v1/jobs/{claim.job_id}/download")
-        self.transport.download_file(download_url, headers=self._headers(), destination=destination)
+        self.transport.download_file(
+            download_url,
+            headers=self._download_headers_for_url(download_url),
+            destination=destination,
+        )
         return destination
 
     def upload_result(

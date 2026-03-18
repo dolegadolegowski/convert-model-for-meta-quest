@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.13
+
+- Fixed token leakage risk by limiting `Authorization` header to same-origin download endpoints.
+- External `download_url` (signed storage links) is now fetched without bearer token.
+- Added security unit tests for same-origin vs cross-origin download header behavior.
+
 ## 0.12
 
 - Added secure-by-default HTTPS enforcement for remote worker server URL.

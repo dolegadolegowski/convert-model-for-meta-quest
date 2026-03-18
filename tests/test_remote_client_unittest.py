@@ -20,7 +20,7 @@ class FakeTransport:
         return {"ok": True}
 
     def download_file(self, url, headers, destination: Path):
-        self.calls.append(("download", url, destination))
+        self.calls.append(("download", url, headers, destination))
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text("mesh")
 
@@ -97,6 +97,54 @@ class RemoteClientTests(unittest.TestCase):
             allow_insecure_http=True,
         )
         self.assertEqual(client.server_url, "http://localhost:8000")
+
+    def test_external_download_url_does_not_receive_bearer_token(self) -> None:
+        transport = FakeTransport()
+        client = RemoteWorkerClient(
+            server_url="https://safe.example",
+            worker_token="super-secret",
+            worker_name="worker-a",
+            transport=transport,
+        )
+        claim = client.claim_job(worker_id="worker-1", wait_seconds=10)
+        assert claim is not None
+        with tempfile.TemporaryDirectory() as temp_dir:
+            destination = Path(temp_dir) / "mesh.obj"
+            client.download_job_file(claim, destination)
+
+        download_calls = [c for c in transport.calls if c[0] == "download"]
+        self.assertEqual(len(download_calls), 1)
+        _, _, headers, _ = download_calls[0]
+        self.assertNotIn("Authorization", headers)
+
+    def test_same_origin_download_url_receives_bearer_token(self) -> None:
+        class SameOriginTransport(FakeTransport):
+            def json_request(self, method, url, headers, payload=None):
+                if "/api/v1/jobs/claim" in url:
+                    return {
+                        "job_id": "job-2",
+                        "input_filename": "mesh.obj",
+                        "download_url": "https://example.org/api/v1/jobs/job-2/download",
+                    }
+                return super().json_request(method, url, headers, payload)
+
+        transport = SameOriginTransport()
+        client = RemoteWorkerClient(
+            server_url="https://example.org",
+            worker_token="super-secret",
+            worker_name="worker-a",
+            transport=transport,
+        )
+        claim = client.claim_job(worker_id="worker-1", wait_seconds=10)
+        assert claim is not None
+        with tempfile.TemporaryDirectory() as temp_dir:
+            destination = Path(temp_dir) / "mesh.obj"
+            client.download_job_file(claim, destination)
+
+        download_calls = [c for c in transport.calls if c[0] == "download"]
+        self.assertEqual(len(download_calls), 1)
+        _, _, headers, _ = download_calls[0]
+        self.assertIn("Authorization", headers)
 
 
 if __name__ == "__main__":
