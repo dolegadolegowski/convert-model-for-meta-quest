@@ -367,17 +367,25 @@ class RemoteWorkerClient:
         if not source_checksum:
             raise RuntimeError(f"missing source checksum for upload_result job_id={claim.job_id}")
         result_checksum = self._compute_file_sha256(optimized_file)
-
-        metadata_payload: dict[str, Any] = {
-            "job_id": claim.job_id,
-            "input_filename": claim.input_filename,
-            "summary": summary,
+        checksum_bundle: dict[str, Any] = {
             "source_checksum": source_checksum,
             "source_sha256": source_checksum,
             "input_sha256": source_checksum,
             "result_checksum": result_checksum,
             "result_sha256": result_checksum,
             "output_sha256": result_checksum,
+            "source": {"sha256": source_checksum},
+            "result": {"sha256": result_checksum},
+        }
+
+        metadata_payload: dict[str, Any] = {
+            "job_id": claim.job_id,
+            "input_filename": claim.input_filename,
+            "summary": summary,
+            "metadata_version": 1,
+            **checksum_bundle,
+            "checksums": checksum_bundle,
+            "worker_metadata": checksum_bundle,
         }
         try:
             metadata_payload["report"] = json.loads(report_file.read_text(encoding="utf-8"))
@@ -391,7 +399,14 @@ class RemoteWorkerClient:
             "summary": summary,
             "input_filename": claim.input_filename,
             "lease_token": lease_token,
+            "source_checksum": source_checksum,
+            "source_sha256": source_checksum,
+            "input_sha256": source_checksum,
+            "result_checksum": result_checksum,
+            "result_sha256": result_checksum,
+            "output_sha256": result_checksum,
             "metadata_json": json.dumps(metadata_payload, ensure_ascii=False),
+            "worker_metadata_json": json.dumps(checksum_bundle, ensure_ascii=False),
         }
         files = {
             "result_file": optimized_file,

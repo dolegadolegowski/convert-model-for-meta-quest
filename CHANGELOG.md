@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.24
+
+- Expanded worker upload checksum compatibility: metadata now includes checksum aliases in top-level, `checksums`, and `worker_metadata`.
+- Added multipart checksum fallback fields (`result_checksum`/`result_sha256`/`output_sha256` and source aliases).
+- Added `worker_metadata_json` field for servers expecting separate worker metadata envelope.
+
 ## 0.23
 
 - Improved GUI connection status readability with brighter colors and bold font.

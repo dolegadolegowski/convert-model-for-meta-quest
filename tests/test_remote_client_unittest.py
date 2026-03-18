@@ -78,11 +78,17 @@ class RemoteClientTests(unittest.TestCase):
         _, _, fields, files = upload_calls[0]
         self.assertEqual(fields.get("lease_token"), "lease-1")
         self.assertIn("metadata_json", fields)
+        self.assertIn("worker_metadata_json", fields)
         self.assertIn("result_file", files)
         metadata = json.loads(fields["metadata_json"])
         self.assertEqual(metadata.get("source_checksum"), "source-checksum-1")
         expected_result_checksum = hashlib.sha256(b"binary").hexdigest()
         self.assertEqual(metadata.get("result_checksum"), expected_result_checksum)
+        self.assertEqual(fields.get("result_checksum"), expected_result_checksum)
+        checksums = metadata.get("checksums") or {}
+        self.assertEqual(checksums.get("result_sha256"), expected_result_checksum)
+        worker_metadata = metadata.get("worker_metadata") or {}
+        self.assertEqual(worker_metadata.get("result_checksum"), expected_result_checksum)
 
     def test_register_falls_back_to_local_worker_id_when_response_missing_id(self) -> None:
         class NoIdTransport(FakeTransport):
