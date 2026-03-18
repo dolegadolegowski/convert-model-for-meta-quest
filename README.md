@@ -41,6 +41,7 @@ Rationale:
 - avoids side effects of force-joining separate meshes,
 - keeps behavior predictable for complex scenes,
 - allows global target control by checking total faces after each pass.
+- protects small objects by default using `--min-object-faces-for-decimate`.
 
 ## Requirements
 
@@ -64,6 +65,7 @@ python3 scripts/optimize_model.py \
   --max-decimate-passes 4 \
   --initial-target-safety 0.995 \
   --correction-target-safety 0.99 \
+  --min-object-faces-for-decimate 1500 \
   --cleanup-merge-distance 1e-6 \
   --cleanup-degenerate-distance 1e-8 \
   --blender-exec /Applications/Blender.app/Contents/MacOS/Blender

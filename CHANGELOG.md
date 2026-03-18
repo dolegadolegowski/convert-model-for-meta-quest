@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3
+
+- Added per-object decimation ratio planning for multi-mesh scenes.
+- Added small-object protection threshold (`--min-object-faces-for-decimate`).
+- Fixed over-aggressive ratio-map target math to keep reductions closer to face limit.
+- Added unit coverage for per-object ratio planning.
+
 ## 0.2
 
 - Added configurable decimation and cleanup tuning parameters in CLI.

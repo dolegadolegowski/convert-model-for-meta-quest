@@ -21,7 +21,7 @@ if str(SRC_DIR) not in sys.path:
 
 from quest_model_optimizer.reduction import (  # noqa: E402
     compute_correction_ratio,
-    compute_initial_ratio,
+    compute_object_ratio_map,
     should_decimate,
 )
 
@@ -46,6 +46,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--correction-target-safety", type=float, default=0.99)
     parser.add_argument("--cleanup-merge-distance", type=float, default=1e-6)
     parser.add_argument("--cleanup-degenerate-distance", type=float, default=1e-8)
+    parser.add_argument("--min-object-faces-for-decimate", type=int, default=1500)
     return parser.parse_args(argv)
 
 
@@ -132,13 +133,16 @@ def count_faces(objs: list) -> int:
     return int(sum(len(obj.data.polygons) for obj in objs))
 
 
-def apply_decimate_pass(objs: list, ratio: float, pass_index: int) -> dict:
+def apply_decimate_pass(objs: list, ratio_map: dict[str, float], pass_index: int) -> dict:
     bpy.ops.object.mode_set(mode="OBJECT")
     bpy.ops.object.select_all(action="DESELECT")
 
     affected = 0
     for obj in objs:
         if len(obj.data.polygons) <= 8:
+            continue
+        ratio = ratio_map.get(obj.name, 1.0)
+        if ratio >= 0.999:
             continue
         modifier = obj.modifiers.new(name=f"AutoDecimate_{pass_index}", type="DECIMATE")
         modifier.ratio = ratio
@@ -150,7 +154,7 @@ def apply_decimate_pass(objs: list, ratio: float, pass_index: int) -> dict:
 
     return {
         "pass_index": pass_index,
-        "ratio": ratio,
+        "ratio_map": ratio_map,
         "affected_objects": affected,
     }
 
@@ -243,6 +247,7 @@ def optimize(
     correction_target_safety: float,
     cleanup_merge_distance: float,
     cleanup_degenerate_distance: float,
+    min_object_faces_for_decimate: int,
 ) -> dict:
     start = time.time()
     report = {
@@ -266,17 +271,19 @@ def optimize(
 
     faces_before = count_faces(objs)
     report["faces_before"] = faces_before
+    face_map_before = {obj.name: len(obj.data.polygons) for obj in objs}
 
     decimate = {"applied": False, "passes": []}
 
     if should_decimate(faces_before, face_limit):
         decimate["applied"] = True
-        ratio = compute_initial_ratio(
-            faces_before,
-            face_limit,
-            safety=initial_target_safety,
+        ratio_map = compute_object_ratio_map(
+            face_counts=face_map_before,
+            target_total_faces=int(face_limit * initial_target_safety),
+            min_object_faces_for_decimate=min_object_faces_for_decimate,
+            safety=1.0,
         )
-        pass_info = apply_decimate_pass(objs, ratio=ratio, pass_index=1)
+        pass_info = apply_decimate_pass(objs, ratio_map=ratio_map, pass_index=1)
         faces_after = count_faces(objs)
         pass_info["faces_after_pass"] = faces_after
         decimate["passes"].append(pass_info)
@@ -289,7 +296,18 @@ def optimize(
                 face_limit,
                 safety=correction_target_safety,
             )
-            correction_info = apply_decimate_pass(objs, ratio=correction_ratio, pass_index=pass_idx)
+            correction_face_map = {obj.name: len(obj.data.polygons) for obj in objs}
+            correction_ratio_map = compute_object_ratio_map(
+                face_counts=correction_face_map,
+                target_total_faces=int(face_limit * correction_target_safety),
+                min_object_faces_for_decimate=min_object_faces_for_decimate,
+                safety=correction_ratio,
+            )
+            correction_info = apply_decimate_pass(
+                objs,
+                ratio_map=correction_ratio_map,
+                pass_index=pass_idx,
+            )
             faces_after = count_faces(objs)
             correction_info["faces_after_pass"] = faces_after
             decimate["passes"].append(correction_info)
@@ -319,6 +337,7 @@ def optimize(
         "correction_target_safety": correction_target_safety,
         "cleanup_merge_distance": cleanup_merge_distance,
         "cleanup_degenerate_distance": cleanup_degenerate_distance,
+        "min_object_faces_for_decimate": min_object_faces_for_decimate,
     }
     report["status"] = "success"
     report["timings"]["total_seconds"] = round(time.time() - start, 4)
@@ -368,6 +387,7 @@ def main() -> int:
             correction_target_safety=args.correction_target_safety,
             cleanup_merge_distance=args.cleanup_merge_distance,
             cleanup_degenerate_distance=args.cleanup_degenerate_distance,
+            min_object_faces_for_decimate=args.min_object_faces_for_decimate,
         )
         write_report(report_path, payload)
         log(

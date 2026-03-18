@@ -63,6 +63,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Degenerate dissolve threshold for cleanup",
     )
     parser.add_argument(
+        "--min-object-faces-for-decimate",
+        type=int,
+        default=1500,
+        help="Objects below this face count are preserved in per-object decimation strategy",
+    )
+    parser.add_argument(
         "--print-json",
         action="store_true",
         help="Print final report JSON summary on stdout",
@@ -122,6 +128,7 @@ def main(argv: list[str] | None = None) -> int:
         correction_target_safety=args.correction_target_safety,
         cleanup_merge_distance=args.cleanup_merge_distance,
         cleanup_degenerate_distance=args.cleanup_degenerate_distance,
+        min_object_faces_for_decimate=args.min_object_faces_for_decimate,
     )
 
     report = result.get("report", {})
