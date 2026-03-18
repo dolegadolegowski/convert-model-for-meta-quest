@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.23
+
+- Improved GUI connection status readability with brighter colors and bold font.
+- Added worker version display in GUI header and window title (`v<version>`).
+- Wired GUI version source from project `VERSION` via `read_version()`.
+
 ## 0.22
 
 - Added result file checksum propagation to worker upload metadata (`result_checksum`/`result_sha256`/`output_sha256`).

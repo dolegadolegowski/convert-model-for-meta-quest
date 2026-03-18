@@ -147,7 +147,7 @@ def main(argv: list[str] | None = None) -> int:
         return loop.run_forever()
 
     try:
-        gui = GuiLogWindow()
+        gui = GuiLogWindow(app_version=read_version())
         gui.attach_logger(logger)
         gui.bind_stop_event(loop.stop_event)
         loop.observer = gui

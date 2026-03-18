@@ -32,24 +32,41 @@ class _QueueLogHandler(logging.Handler):
 class GuiLogWindow(WorkerObserver):
     """GUI observer implementation receiving events from worker thread."""
 
-    def __init__(self, title: str = "ConvertModelForMetaQuest Worker") -> None:
+    def __init__(self, title: str = "ConvertModelForMetaQuest Worker", app_version: str | None = None) -> None:
         import tkinter as tk
         from tkinter import scrolledtext
 
         self._tk = tk
         self._event_queue: "queue.Queue[dict[str, Any]]" = queue.Queue()
+        self._connected_color = "#0A8F2E"
+        self._disconnected_color = "#C62828"
+        self._status_font = ("Helvetica", 12, "bold")
+        version_value = (app_version or "-").strip() if app_version is not None else "-"
 
         self.root = tk.Tk()
-        self.root.title(title)
+        self.root.title(f"{title} v{version_value}")
         self.root.geometry("860x420")
 
         self.connection_var = tk.StringVar(value="DISCONNECTED")
         self.last_download_var = tk.StringVar(value="-")
         self.geometry_var = tk.StringVar(value="-")
         self.upload_var = tk.StringVar(value="-")
+        self.version_var = tk.StringVar(value=version_value)
+
+        header = tk.Frame(self.root)
+        header.pack(fill="x")
+        tk.Label(header, text="Version:", anchor="w").pack(side="left")
+        tk.Label(header, textvariable=self.version_var, anchor="w").pack(side="left", padx=(4, 0))
 
         tk.Label(self.root, text="Connection:", anchor="w").pack(fill="x")
-        tk.Label(self.root, textvariable=self.connection_var, anchor="w", fg="#004d00").pack(fill="x")
+        self.connection_value_label = tk.Label(
+            self.root,
+            textvariable=self.connection_var,
+            anchor="w",
+            fg=self._disconnected_color,
+            font=self._status_font,
+        )
+        self.connection_value_label.pack(fill="x")
 
         tk.Label(self.root, text="Last Download:", anchor="w").pack(fill="x")
         tk.Label(self.root, textvariable=self.last_download_var, anchor="w").pack(fill="x")
@@ -105,6 +122,9 @@ class GuiLogWindow(WorkerObserver):
             ts = event.get("ts", _now())
             state = "CONNECTED" if connected else "DISCONNECTED"
             self.connection_var.set(f"{state} ({ts})")
+            self.connection_value_label.configure(
+                fg=self._connected_color if connected else self._disconnected_color
+            )
             return
         if kind == "download":
             self.last_download_var.set(str(event.get("message", "-")))
