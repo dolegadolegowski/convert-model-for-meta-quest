@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.20
+
+- Updated worker upload contract for Medical 3D Models API: multipart now sends `lease_token`, `metadata_json`, and `result_file`.
+- Added explicit runtime check for missing lease token before upload to fail fast with clear error.
+- Added unit coverage for upload contract fields and missing-lease-token guard.
+
 ## 0.19
 
 - Improved claim endpoint compatibility by sending `worker_id` in query and JSON body.

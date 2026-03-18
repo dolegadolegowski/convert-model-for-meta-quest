@@ -17,7 +17,12 @@ class FakeTransport:
         if url.endswith("/api/v1/workers/register"):
             return {"worker_id": "worker-1", "heartbeat_interval": 12}
         if "/api/v1/jobs/claim" in url:
-            return {"job_id": "job-1", "input_filename": "HOL.obj", "download_url": "https://server/file"}
+            return {
+                "job_id": "job-1",
+                "input_filename": "HOL.obj",
+                "download_url": "https://server/file",
+                "lease_token": "lease-1",
+            }
         return {"ok": True}
 
     def download_file(self, url, headers, destination: Path):
@@ -65,6 +70,12 @@ class RemoteClientTests(unittest.TestCase):
             )
 
         self.assertEqual(response, {"ok": True})
+        upload_calls = [c for c in transport.calls if c[0] == "upload"]
+        self.assertEqual(len(upload_calls), 1)
+        _, _, fields, files = upload_calls[0]
+        self.assertEqual(fields.get("lease_token"), "lease-1")
+        self.assertIn("metadata_json", fields)
+        self.assertIn("result_file", files)
 
     def test_register_falls_back_to_local_worker_id_when_response_missing_id(self) -> None:
         class NoIdTransport(FakeTransport):
@@ -126,6 +137,43 @@ class RemoteClientTests(unittest.TestCase):
         self.assertEqual(query.get("wait"), ["17"])
         self.assertEqual(query.get("worker_id"), ["worker-query-1"])
         self.assertEqual(payload.get("worker_id"), "worker-query-1")
+
+    def test_upload_result_requires_lease_token(self) -> None:
+        class NoLeaseTransport(FakeTransport):
+            def json_request(self, method, url, headers, payload=None):
+                if "/api/v1/jobs/claim" in url:
+                    return {
+                        "job_id": "job-9",
+                        "input_filename": "mesh.obj",
+                        "download_url": "https://example.org/file",
+                    }
+                return super().json_request(method, url, headers, payload)
+
+        transport = NoLeaseTransport()
+        client = RemoteWorkerClient(
+            server_url="https://example.org",
+            worker_token="token",
+            worker_name="worker-a",
+            worker_id="worker-a-id",
+            transport=transport,
+        )
+        claim = client.claim_job(worker_id="worker-1", wait_seconds=10)
+        assert claim is not None
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            output_file = root / "out.glb"
+            report_file = root / "report.json"
+            output_file.write_bytes(b"binary")
+            report_file.write_text("{}", encoding="utf-8")
+            with self.assertRaises(RuntimeError):
+                client.upload_result(
+                    worker_id="worker-1",
+                    claim=claim,
+                    optimized_file=output_file,
+                    report_file=report_file,
+                    summary="mesh.obj: 10 -> 8 (decimate)",
+                )
 
     def test_http_is_rejected_without_override(self) -> None:
         with self.assertRaises(ValueError):

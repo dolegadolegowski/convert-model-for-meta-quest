@@ -342,14 +342,31 @@ class RemoteWorkerClient:
         report_file: Path,
         summary: str,
     ) -> dict[str, Any] | None:
+        lease_token = claim.lease_token or self._extract_lease_token(claim.payload)
+        if not lease_token:
+            raise RuntimeError(f"missing lease_token for upload_result job_id={claim.job_id}")
+
+        metadata_payload: dict[str, Any] = {
+            "job_id": claim.job_id,
+            "input_filename": claim.input_filename,
+            "summary": summary,
+        }
+        try:
+            metadata_payload["report"] = json.loads(report_file.read_text(encoding="utf-8"))
+        except Exception:
+            # Keep upload resilient even when local report file is malformed.
+            metadata_payload["report_parse_error"] = "failed to parse local report JSON"
+
         fields = {
             "worker_id": worker_id,
             "job_id": claim.job_id,
             "summary": summary,
             "input_filename": claim.input_filename,
+            "lease_token": lease_token,
+            "metadata_json": json.dumps(metadata_payload, ensure_ascii=False),
         }
         files = {
-            "optimized_file": optimized_file,
+            "result_file": optimized_file,
             "report_file": report_file,
         }
         return self.transport.upload_multipart(
