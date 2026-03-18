@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5
+
+- Added stdlib unit test suite and dedicated runner (`scripts/run_unit_tests.py`).
+- Kept regression workflow independent from `pytest` installation.
+- Fixed unittest discovery path handling for local execution.
+
 ## 0.4
 
 - Added cleanup guard to skip normal recalculation on very large meshes.

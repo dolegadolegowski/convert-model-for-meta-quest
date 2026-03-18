@@ -87,6 +87,12 @@ python3 scripts/run_regression.py \
   --blender-exec /Applications/Blender.app/Contents/MacOS/Blender
 ```
 
+Lightweight unit tests without external dependencies:
+
+```bash
+python3 scripts/run_unit_tests.py
+```
+
 Default test cases:
 
 - `/Users/damiandd/Desktop/kosz.obj`
