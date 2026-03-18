@@ -75,6 +75,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip normal recalculation for meshes larger than this face count",
     )
     parser.add_argument(
+        "--blender-timeout-seconds",
+        type=int,
+        default=1800,
+        help="Timeout for a single Blender process execution",
+    )
+    parser.add_argument(
         "--print-json",
         action="store_true",
         help="Print final report JSON summary on stdout",
@@ -121,6 +127,7 @@ def main(argv: list[str] | None = None) -> int:
     logger.info("Face limit: %s", args.face_limit)
     logger.info("Blender executable: %s", blender_exec)
     logger.info("Max decimate passes: %s", args.max_decimate_passes)
+    logger.info("Blender timeout (s): %s", args.blender_timeout_seconds)
 
     result = run_blender_pipeline(
         input_path=input_path,
@@ -136,6 +143,7 @@ def main(argv: list[str] | None = None) -> int:
         cleanup_degenerate_distance=args.cleanup_degenerate_distance,
         min_object_faces_for_decimate=args.min_object_faces_for_decimate,
         cleanup_skip_normal_recalc_above_faces=args.cleanup_skip_normal_recalc_above_faces,
+        blender_timeout_seconds=args.blender_timeout_seconds,
     )
 
     report = result.get("report", {})

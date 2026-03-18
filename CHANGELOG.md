@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8
+
+- Added Blender process timeout control (`--blender-timeout-seconds`).
+- Added timeout-aware error handling in runner for hung conversions.
+- Threaded timeout option through integration regression runner.
+
 ## 0.7
 
 - Added optional parallel regression execution via `--jobs`.

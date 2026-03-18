@@ -29,6 +29,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run integration regression suite")
     parser.add_argument("--blender-exec", default="/Applications/Blender.app/Contents/MacOS/Blender")
     parser.add_argument("--face-limit", type=int, default=300000)
+    parser.add_argument("--blender-timeout-seconds", type=int, default=1800)
     parser.add_argument(
         "--jobs",
         type=int,
@@ -66,7 +67,7 @@ def evaluate_checks(report: dict, input_path: Path, output_path: Path, face_limi
     return checks
 
 
-def run_case(input_file: str, blender_exec: str, face_limit: int) -> dict:
+def run_case(input_file: str, blender_exec: str, face_limit: int, blender_timeout_seconds: int) -> dict:
     input_path = Path(input_file).expanduser().resolve()
     output_path = OUTPUT_DIR / f"{input_path.stem}_optimized.glb"
     report_path = REPORT_DIR / f"{input_path.stem}_report.json"
@@ -87,6 +88,8 @@ def run_case(input_file: str, blender_exec: str, face_limit: int) -> dict:
         str(face_limit),
         "--blender-exec",
         blender_exec,
+        "--blender-timeout-seconds",
+        str(blender_timeout_seconds),
         "--log-level",
         "INFO",
     ]
@@ -202,14 +205,25 @@ def main() -> int:
 
     if jobs == 1:
         cases = [
-            run_case(input_file=input_file, blender_exec=args.blender_exec, face_limit=args.face_limit)
+            run_case(
+                input_file=input_file,
+                blender_exec=args.blender_exec,
+                face_limit=args.face_limit,
+                blender_timeout_seconds=args.blender_timeout_seconds,
+            )
             for input_file in args.inputs
         ]
     else:
         cases = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
             futures = [
-                pool.submit(run_case, input_file, args.blender_exec, args.face_limit)
+                pool.submit(
+                    run_case,
+                    input_file,
+                    args.blender_exec,
+                    args.face_limit,
+                    args.blender_timeout_seconds,
+                )
                 for input_file in args.inputs
             ]
             for future in concurrent.futures.as_completed(futures):

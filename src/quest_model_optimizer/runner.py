@@ -46,6 +46,7 @@ def run_blender_pipeline(
     cleanup_degenerate_distance: float,
     min_object_faces_for_decimate: int,
     cleanup_skip_normal_recalc_above_faces: int,
+    blender_timeout_seconds: int,
 ) -> dict[str, Any]:
     worker_script = Path(__file__).resolve().parent / "blender_worker.py"
     cmd = [
@@ -81,7 +82,27 @@ def run_blender_pipeline(
         str(cleanup_skip_normal_recalc_above_faces),
     ]
 
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=max(1, int(blender_timeout_seconds)),
+        )
+    except subprocess.TimeoutExpired as exc:
+        return {
+            "command": cmd,
+            "returncode": 124,
+            "stdout": exc.stdout or "",
+            "stderr": (exc.stderr or "") + f"\nBlender process timeout after {blender_timeout_seconds}s",
+            "report_path": str(report_path),
+            "report": {
+                "status": "error",
+                "error": f"Blender timeout after {blender_timeout_seconds}s",
+                "input_path": str(input_path),
+                "output_path": str(output_path),
+            },
+        }
 
     result: dict[str, Any] = {
         "command": cmd,

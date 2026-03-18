@@ -69,6 +69,7 @@ python3 scripts/optimize_model.py \
   --cleanup-merge-distance 1e-6 \
   --cleanup-degenerate-distance 1e-8 \
   --cleanup-skip-normal-recalc-above-faces 500000 \
+  --blender-timeout-seconds 1800 \
   --blender-exec /Applications/Blender.app/Contents/MacOS/Blender
 ```
 
@@ -85,6 +86,7 @@ python3 scripts/optimize_model.py \
 ```bash
 python3 scripts/run_regression.py \
   --jobs 1 \
+  --blender-timeout-seconds 1800 \
   --blender-exec /Applications/Blender.app/Contents/MacOS/Blender
 ```
 
