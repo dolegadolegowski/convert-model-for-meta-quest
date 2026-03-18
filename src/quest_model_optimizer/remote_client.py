@@ -134,10 +134,19 @@ class RemoteWorkerClient:
         worker_name: str,
         timeout: int = 60,
         transport: TransportProtocol | None = None,
+        allow_insecure_http: bool = False,
     ) -> None:
-        self.server_url = server_url.rstrip("/")
+        normalized_url = server_url.rstrip("/")
+        parsed = parse.urlparse(normalized_url)
+        if parsed.scheme not in {"https", "http"}:
+            raise ValueError("server_url must use https:// (or http:// with explicit override)")
+        if parsed.scheme == "http" and not allow_insecure_http:
+            raise ValueError("insecure http server_url blocked; use https:// or allow_insecure_http=True")
+
+        self.server_url = normalized_url
         self.worker_token = worker_token
         self.worker_name = worker_name
+        self.allow_insecure_http = allow_insecure_http
         self.transport: TransportProtocol = transport or UrllibTransport(timeout=timeout)
 
     def _url(self, path: str) -> str:

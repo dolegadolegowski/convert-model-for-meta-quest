@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12
+
+- Added secure-by-default HTTPS enforcement for remote worker server URL.
+- Added explicit `--allow-insecure-http` override for local development scenarios.
+- Added tests validating HTTP rejection and opt-in override behavior.
+
 ## 0.11
 
 - Added remote HTTPS worker client with register/heartbeat/claim/download/upload/fail flow.

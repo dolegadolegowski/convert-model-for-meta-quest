@@ -101,6 +101,11 @@ Worker configuration via environment variables:
 - `WORKER_TOKEN`
 - `WORKER_NAME`
 
+Security defaults:
+
+- Worker enforces `https://` server URL by default.
+- For local development only, `http://` can be enabled using `--allow-insecure-http`.
+
 Run worker with GUI:
 
 ```bash

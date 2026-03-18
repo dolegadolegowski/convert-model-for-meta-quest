@@ -30,6 +30,11 @@ def build_parser() -> argparse.ArgumentParser:
     gui_group.add_argument("--no-gui", action="store_true", help="Run headless (console logs only)")
 
     parser.add_argument("--work-dir", default="worker_runtime", help="Directory for downloaded/processed files")
+    parser.add_argument(
+        "--allow-insecure-http",
+        action="store_true",
+        help="Allow http:// server URL (for local development only)",
+    )
     parser.add_argument("--poll-wait", type=int, default=30, help="Long-poll wait seconds")
     parser.add_argument("--once", action="store_true", help="Run single claim cycle and exit")
     parser.add_argument("--dry-run", action="store_true", help="Validate config and exit without network calls")
@@ -73,12 +78,17 @@ def main(argv: list[str] | None = None) -> int:
 
     use_gui = _resolve_gui_mode(args)
 
-    client = RemoteWorkerClient(
-        server_url=args.server_url,
-        worker_token=args.token,
-        worker_name=args.worker_name,
-        timeout=max(10, int(args.poll_wait) + 30),
-    )
+    try:
+        client = RemoteWorkerClient(
+            server_url=args.server_url,
+            worker_token=args.token,
+            worker_name=args.worker_name,
+            timeout=max(10, int(args.poll_wait) + 30),
+            allow_insecure_http=bool(args.allow_insecure_http),
+        )
+    except ValueError as exc:
+        logger.error("Invalid worker configuration: %s", exc)
+        return 1
 
     processor = PipelineProcessor(
         blender_exec=args.blender_exec,

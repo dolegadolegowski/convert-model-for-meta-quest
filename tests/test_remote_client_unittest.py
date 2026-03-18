@@ -79,6 +79,25 @@ class RemoteClientTests(unittest.TestCase):
         )
         self.assertIsNone(client.claim_job(worker_id="w", wait_seconds=5))
 
+    def test_http_is_rejected_without_override(self) -> None:
+        with self.assertRaises(ValueError):
+            RemoteWorkerClient(
+                server_url="http://example.org",
+                worker_token="token",
+                worker_name="worker-a",
+                transport=FakeTransport(),
+            )
+
+    def test_http_is_allowed_with_override(self) -> None:
+        client = RemoteWorkerClient(
+            server_url="http://localhost:8000",
+            worker_token="token",
+            worker_name="worker-a",
+            transport=FakeTransport(),
+            allow_insecure_http=True,
+        )
+        self.assertEqual(client.server_url, "http://localhost:8000")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
