@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.19
+
+- Improved claim endpoint compatibility by sending `worker_id` in query and JSON body.
+- Added unit test validating claim request query (`wait`, `worker_id`) to prevent API mismatch regressions.
+
 ## 0.18
 
 - Added lease-aware download support for APIs requiring `worker_id` and `lease_token` query params.

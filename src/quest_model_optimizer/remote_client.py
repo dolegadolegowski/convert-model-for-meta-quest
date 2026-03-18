@@ -273,7 +273,13 @@ class RemoteWorkerClient:
         )
 
     def claim_job(self, worker_id: str, wait_seconds: int = 30) -> JobClaim | None:
-        url = self._url(f"/api/v1/jobs/claim?wait={max(1, int(wait_seconds))}")
+        url = self._append_query_params(
+            self._url("/api/v1/jobs/claim"),
+            {
+                "wait": str(max(1, int(wait_seconds))),
+                "worker_id": worker_id,
+            },
+        )
         payload = {"worker_id": worker_id}
         response = self.transport.json_request(
             method="POST",

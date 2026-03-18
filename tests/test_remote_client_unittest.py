@@ -105,6 +105,28 @@ class RemoteClientTests(unittest.TestCase):
         )
         self.assertIsNone(client.claim_job(worker_id="w", wait_seconds=5))
 
+    def test_claim_sends_worker_id_in_query_for_compatibility(self) -> None:
+        transport = FakeTransport()
+        client = RemoteWorkerClient(
+            server_url="https://example.org",
+            worker_token="token",
+            worker_name="worker-a",
+            worker_id="worker-a-id",
+            transport=transport,
+        )
+
+        claim = client.claim_job(worker_id="worker-query-1", wait_seconds=17)
+        self.assertIsNotNone(claim)
+
+        claim_calls = [c for c in transport.calls if c[0] == "json" and "/api/v1/jobs/claim" in c[2]]
+        self.assertEqual(len(claim_calls), 1)
+        _, _, url, payload = claim_calls[0]
+        parsed = parse.urlparse(url)
+        query = parse.parse_qs(parsed.query)
+        self.assertEqual(query.get("wait"), ["17"])
+        self.assertEqual(query.get("worker_id"), ["worker-query-1"])
+        self.assertEqual(payload.get("worker_id"), "worker-query-1")
+
     def test_http_is_rejected_without_override(self) -> None:
         with self.assertRaises(ValueError):
             RemoteWorkerClient(
