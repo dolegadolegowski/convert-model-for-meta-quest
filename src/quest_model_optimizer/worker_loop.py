@@ -13,6 +13,7 @@ from typing import Protocol
 from .remote_client import RemoteWorkerClient
 from .worker_models import JobClaim
 from .worker_processor import PipelineProcessor
+from .worker_security import validate_download_file
 from .worker_summary import build_geometry_summary
 
 
@@ -54,6 +55,7 @@ class LoopConfig:
     max_backoff_seconds: int = 60
     once: bool = False
     heartbeat_interval_fallback: int = 15
+    max_download_bytes: int = 1024 * 1024 * 1024
 
 
 class ExponentialBackoff:
@@ -201,6 +203,29 @@ class WorkerLoop:
         download_msg = f"{utc_timestamp()} | Download complete: {download_path.name}"
         self.observer.set_last_download(download_msg)
         self.logger.info(download_msg)
+
+        expected_sha256 = claim.payload.get("sha256") or claim.payload.get("input_sha256")
+        try:
+            validate_download_file(
+                path=download_path,
+                expected_sha256=str(expected_sha256) if expected_sha256 else None,
+                max_bytes=int(self.config.max_download_bytes),
+            )
+        except Exception as exc:
+            error_message = f"download validation failed: {exc}"
+            self.logger.error("Job %s failed security validation: %s", claim.job_id, error_message)
+            self.observer.set_upload_status(f"{utc_timestamp()} | Upload status: FAILED (validation)")
+            self._retry(
+                lambda: self.client.report_failure(
+                    worker_id=self.worker_id or "",
+                    claim=claim,
+                    error_message=error_message,
+                ),
+                operation_name="report_failure",
+                attempts=5,
+            )
+            self.current_job_id = None
+            return
 
         outcome = self.processor.process(download_path, output_path, report_path)
         if not outcome.success:

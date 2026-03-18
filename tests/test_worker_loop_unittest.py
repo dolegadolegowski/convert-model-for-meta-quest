@@ -136,6 +136,37 @@ class WorkerLoopTests(unittest.TestCase):
         self.assertEqual(client.failure_calls, 1)
         self.assertTrue(any("Upload status: FAILED" in msg for msg in observer.upload))
 
+    def test_validation_failure_reports_job_failure(self) -> None:
+        class ValidationFailClient(FakeClient):
+            def claim_job(self, worker_id: str, wait_seconds: int = 30):
+                self.claim_count += 1
+                if self.claim_count > 1:
+                    return None
+                return JobClaim(
+                    job_id="job-2",
+                    input_filename="evil.obj",
+                    download_url=None,
+                    payload={"sha256": "deadbeef"},
+                )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            observer = Observer()
+            client = ValidationFailClient()
+            loop = WorkerLoop(
+                client=client,
+                processor=SuccessProcessor(),
+                work_root=Path(temp_dir),
+                logger=logging.getLogger("worker-loop-validation"),
+                observer=observer,
+                config=LoopConfig(once=True),
+            )
+            rc = loop.run_forever()
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(client.failure_calls, 1)
+        self.assertEqual(client.upload_calls, 0)
+        self.assertTrue(any("FAILED (validation)" in msg for msg in observer.upload))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -106,6 +106,7 @@ Security defaults:
 - Worker enforces `https://` server URL by default.
 - For local development only, `http://` can be enabled using `--allow-insecure-http`.
 - Bearer token is attached only for same-origin download endpoints; external signed URLs are fetched without auth header.
+- Downloaded file is validated against optional job checksum (`sha256` / `input_sha256`) and size limit (`--max-download-bytes`).
 
 Run worker with GUI:
 
@@ -114,6 +115,7 @@ python3 scripts/run_worker.py \
   --server-url https://your-server.example \
   --token YOUR_TOKEN \
   --worker-name mac-mini-worker-01 \
+  --max-download-bytes 1073741824 \
   --with-gui
 ```
 
@@ -124,6 +126,7 @@ python3 scripts/run_worker.py \
   --server-url https://your-server.example \
   --token YOUR_TOKEN \
   --worker-name mac-mini-worker-01 \
+  --max-download-bytes 1073741824 \
   --no-gui
 ```
 

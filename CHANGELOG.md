@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.14
+
+- Added download integrity validation (optional `sha256` / `input_sha256`) before model processing.
+- Added max download size guard (`--max-download-bytes`) to mitigate oversized payload abuse.
+- Added security unit tests for checksum mismatch, size overflow, and validation-failure job reporting.
+
 ## 0.13
 
 - Fixed token leakage risk by limiting `Authorization` header to same-origin download endpoints.

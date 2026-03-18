@@ -36,6 +36,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Allow http:// server URL (for local development only)",
     )
     parser.add_argument("--poll-wait", type=int, default=30, help="Long-poll wait seconds")
+    parser.add_argument(
+        "--max-download-bytes",
+        type=int,
+        default=1024 * 1024 * 1024,
+        help="Maximum allowed downloaded input size in bytes",
+    )
     parser.add_argument("--once", action="store_true", help="Run single claim cycle and exit")
     parser.add_argument("--dry-run", action="store_true", help="Validate config and exit without network calls")
 
@@ -107,6 +113,7 @@ def main(argv: list[str] | None = None) -> int:
         config=LoopConfig(
             poll_wait_seconds=args.poll_wait,
             once=args.once,
+            max_download_bytes=args.max_download_bytes,
         ),
     )
 
