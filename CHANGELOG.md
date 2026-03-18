@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.22
+
+- Added result file checksum propagation to worker upload metadata (`result_checksum`/`result_sha256`/`output_sha256`).
+- Worker now includes both source and result checksums in `metadata_json` for stricter backend validation.
+- Added unit assertion covering result checksum presence in upload metadata.
+
 ## 0.21
 
 - Added source checksum propagation for worker uploads (`source_checksum`/`source_sha256`/`input_sha256`) in `metadata_json`.

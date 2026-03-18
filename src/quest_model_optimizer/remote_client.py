@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import mimetypes
 import uuid
+from hashlib import sha256
 from pathlib import Path
 from typing import Any, Protocol
 from urllib import error, parse, request
@@ -229,6 +230,17 @@ class RemoteWorkerClient:
         updated_query = parse.urlencode(query)
         return parse.urlunparse(parsed._replace(query=updated_query))
 
+    @staticmethod
+    def _compute_file_sha256(path: Path) -> str:
+        digest = sha256()
+        with path.open("rb") as handle:
+            while True:
+                chunk = handle.read(1024 * 64)
+                if not chunk:
+                    break
+                digest.update(chunk)
+        return digest.hexdigest().lower()
+
     def _download_headers_for_url(self, download_url: str) -> dict[str, str]:
         # Do not leak bearer token to external signed-storage URLs.
         same_origin = self._url_origin(download_url) == self._base_origin()
@@ -354,6 +366,7 @@ class RemoteWorkerClient:
         )
         if not source_checksum:
             raise RuntimeError(f"missing source checksum for upload_result job_id={claim.job_id}")
+        result_checksum = self._compute_file_sha256(optimized_file)
 
         metadata_payload: dict[str, Any] = {
             "job_id": claim.job_id,
@@ -362,6 +375,9 @@ class RemoteWorkerClient:
             "source_checksum": source_checksum,
             "source_sha256": source_checksum,
             "input_sha256": source_checksum,
+            "result_checksum": result_checksum,
+            "result_sha256": result_checksum,
+            "output_sha256": result_checksum,
         }
         try:
             metadata_payload["report"] = json.loads(report_file.read_text(encoding="utf-8"))

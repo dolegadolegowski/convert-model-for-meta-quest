@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import tempfile
 import unittest
@@ -80,6 +81,8 @@ class RemoteClientTests(unittest.TestCase):
         self.assertIn("result_file", files)
         metadata = json.loads(fields["metadata_json"])
         self.assertEqual(metadata.get("source_checksum"), "source-checksum-1")
+        expected_result_checksum = hashlib.sha256(b"binary").hexdigest()
+        self.assertEqual(metadata.get("result_checksum"), expected_result_checksum)
 
     def test_register_falls_back_to_local_worker_id_when_response_missing_id(self) -> None:
         class NoIdTransport(FakeTransport):
