@@ -182,6 +182,7 @@ Default test cases:
 - Some aggressive cleanup actions available in UI are intentionally not auto-run to avoid destructive behavior.
 - Remote worker mode expects server API compatible with listed `/api/v1/...` endpoints.
 - GUI mode requires Tkinter and an available desktop display session.
+- If Tkinter is not available, worker automatically falls back to headless mode.
 
 ## Changelog and versioning
 

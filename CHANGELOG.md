@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.15
+
+- Added graceful fallback to headless mode when Tkinter GUI is unavailable (`_tkinter` missing).
+- Prevented startup crash on `--with-gui` in Python builds without Tk support.
+
 ## 0.14
 
 - Added download integrity validation (optional `sha256` / `input_sha256`) before model processing.

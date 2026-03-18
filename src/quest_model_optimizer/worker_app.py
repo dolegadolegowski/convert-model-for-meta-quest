@@ -123,13 +123,17 @@ def main(argv: list[str] | None = None) -> int:
     try:
         from .gui_log_window import GuiLogWindow
     except Exception as exc:
-        logger.error("GUI unavailable: %s. Run with --no-gui.", exc)
-        return 2
+        logger.warning("GUI import unavailable: %s. Falling back to --no-gui.", exc)
+        return loop.run_forever()
 
-    gui = GuiLogWindow()
-    gui.attach_logger(logger)
-    gui.bind_stop_event(loop.stop_event)
-    loop.observer = gui
+    try:
+        gui = GuiLogWindow()
+        gui.attach_logger(logger)
+        gui.bind_stop_event(loop.stop_event)
+        loop.observer = gui
+    except Exception as exc:
+        logger.warning("GUI initialization failed: %s. Falling back to --no-gui.", exc)
+        return loop.run_forever()
 
     result = {"code": 0}
 
