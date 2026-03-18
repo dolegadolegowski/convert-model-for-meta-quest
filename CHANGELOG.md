@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.11
+
+- Added remote HTTPS worker client with register/heartbeat/claim/download/upload/fail flow.
+- Added worker loop with exponential backoff and retry handling for active jobs.
+- Added small Tkinter GUI window with connection, download, geometry summary, upload status, and timestamped logs.
+- Added headless worker mode (`--no-gui`) and worker app entrypoint (`scripts/run_worker.py`).
+- Added unit tests for API client, worker summary parser, worker loop success/failure behavior, and headless startup.
+
 ## 0.10
 
 - Refactored importer selection to extension-to-operator fallback mapping.

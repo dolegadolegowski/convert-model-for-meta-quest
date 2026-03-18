@@ -1,6 +1,6 @@
 [project]
 name = "convert-model-for-meta-quest"
-version = "0.10"
+version = "0.11"
 description = "CLI pipeline that imports 3D models in Blender, enforces face limits, cleans geometry, and exports GLB."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -11,6 +11,7 @@ dev = ["pytest>=8.0"]
 
 [project.scripts]
 convert-model = "quest_model_optimizer.cli:main"
+convert-model-worker = "quest_model_optimizer.worker_app:main"
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]

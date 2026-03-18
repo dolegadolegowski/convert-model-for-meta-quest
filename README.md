@@ -82,6 +82,59 @@ python3 scripts/optimize_model.py \
   --output /absolute/path/output/model_optimized.glb
 ```
 
+## Remote worker mode (HTTPS)
+
+The project can also run as a remote worker connected to a server queue (for example `Medical 3D Models`).
+
+Expected server endpoints:
+
+- `POST /api/v1/workers/register`
+- `POST /api/v1/workers/heartbeat`
+- `POST /api/v1/jobs/claim?wait=<seconds>`
+- `GET /api/v1/jobs/{job_id}/download` (or `download_url` from claim payload)
+- `POST /api/v1/jobs/{job_id}/result`
+- `POST /api/v1/jobs/{job_id}/fail`
+
+Worker configuration via environment variables:
+
+- `SERVER_URL`
+- `WORKER_TOKEN`
+- `WORKER_NAME`
+
+Run worker with GUI:
+
+```bash
+python3 scripts/run_worker.py \
+  --server-url https://your-server.example \
+  --token YOUR_TOKEN \
+  --worker-name mac-mini-worker-01 \
+  --with-gui
+```
+
+Run worker headless:
+
+```bash
+python3 scripts/run_worker.py \
+  --server-url https://your-server.example \
+  --token YOUR_TOKEN \
+  --worker-name mac-mini-worker-01 \
+  --no-gui
+```
+
+Dry-run for local validation:
+
+```bash
+python3 scripts/run_worker.py --no-gui --dry-run --worker-name local-test
+```
+
+GUI window displays:
+
+- connection status (`CONNECTED` / `DISCONNECTED`),
+- last fully downloaded file with timestamp,
+- geometry summary, for example `HOL.obj: 559697 -> 298151 (decimate)`,
+- last upload status (`SUCCESS` / `FAILED`) with timestamp,
+- scrolling timestamped logs (`INFO/WARN/ERROR`).
+
 ## Regression tests on attached files
 
 ```bash
@@ -118,6 +171,8 @@ Default test cases:
 - Import capability still depends on enabled Blender importers in local build.
 - Decimate can alter topology and UV quality; pipeline aims for minimum required reduction, not perfect visual preservation.
 - Some aggressive cleanup actions available in UI are intentionally not auto-run to avoid destructive behavior.
+- Remote worker mode expects server API compatible with listed `/api/v1/...` endpoints.
+- GUI mode requires Tkinter and an available desktop display session.
 
 ## Changelog and versioning
 
