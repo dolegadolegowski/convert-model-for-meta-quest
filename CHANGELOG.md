@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10
+
+- Refactored importer selection to extension-to-operator fallback mapping.
+- Added optional support mapping for `.3ds` and `.dxf` operators when available.
+- Improved importer error reporting with fallback attempt details.
+
 ## 0.9
 
 - Added strict final face-limit guard (`--fail-if-over-limit`).

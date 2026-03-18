@@ -61,6 +61,13 @@ def op_available(path: str) -> bool:
     return True
 
 
+def invoke_operator(path: str, **kwargs):
+    current = bpy.ops
+    for part in path.split("."):
+        current = getattr(current, part)
+    return current(**kwargs)
+
+
 def import_model(input_path: Path) -> dict:
     ext = input_path.suffix.lower()
 
@@ -75,52 +82,54 @@ def import_model(input_path: Path) -> dict:
         "success": False,
     }
 
-    if ext == ".obj":
-        if op_available("wm.obj_import"):
-            details["import_operator"] = "wm.obj_import"
-            bpy.ops.wm.obj_import(filepath=str(input_path))
-        elif op_available("import_scene.obj"):
-            details["import_operator"] = "import_scene.obj"
-            bpy.ops.import_scene.obj(filepath=str(input_path))
-        else:
-            raise RuntimeError("OBJ importer not available in this Blender build")
-    elif ext == ".fbx":
-        details["import_operator"] = "import_scene.fbx"
-        bpy.ops.import_scene.fbx(filepath=str(input_path))
-    elif ext in {".glb", ".gltf"}:
-        details["import_operator"] = "import_scene.gltf"
-        bpy.ops.import_scene.gltf(filepath=str(input_path))
-    elif ext == ".stl":
-        if op_available("wm.stl_import"):
-            details["import_operator"] = "wm.stl_import"
-            bpy.ops.wm.stl_import(filepath=str(input_path))
-        else:
-            details["import_operator"] = "import_mesh.stl"
-            bpy.ops.import_mesh.stl(filepath=str(input_path))
-    elif ext == ".ply":
-        if op_available("wm.ply_import"):
-            details["import_operator"] = "wm.ply_import"
-            bpy.ops.wm.ply_import(filepath=str(input_path))
-        else:
-            details["import_operator"] = "import_mesh.ply"
-            bpy.ops.import_mesh.ply(filepath=str(input_path))
-    elif ext in {".abc"}:
-        details["import_operator"] = "wm.alembic_import"
-        bpy.ops.wm.alembic_import(filepath=str(input_path))
-    elif ext in {".usd", ".usda", ".usdc", ".usdz"}:
-        details["import_operator"] = "wm.usd_import"
-        bpy.ops.wm.usd_import(filepath=str(input_path))
-    elif ext == ".dae":
-        details["import_operator"] = "wm.collada_import"
-        bpy.ops.wm.collada_import(filepath=str(input_path))
-    elif ext in {".x3d", ".wrl"}:
-        details["import_operator"] = "import_scene.x3d"
-        bpy.ops.import_scene.x3d(filepath=str(input_path))
-    elif ext == ".blend":
+    if ext == ".blend":
         details["import_operator"] = "wm.open_mainfile"
         bpy.ops.wm.open_mainfile(filepath=str(input_path))
     else:
-        raise RuntimeError(f"Unsupported extension: {ext}")
+        importers_by_extension = {
+            ".obj": ["wm.obj_import", "import_scene.obj"],
+            ".fbx": ["import_scene.fbx"],
+            ".glb": ["import_scene.gltf"],
+            ".gltf": ["import_scene.gltf"],
+            ".stl": ["wm.stl_import", "import_mesh.stl"],
+            ".ply": ["wm.ply_import", "import_mesh.ply"],
+            ".abc": ["wm.alembic_import"],
+            ".usd": ["wm.usd_import"],
+            ".usda": ["wm.usd_import"],
+            ".usdc": ["wm.usd_import"],
+            ".usdz": ["wm.usd_import"],
+            ".dae": ["wm.collada_import"],
+            ".x3d": ["import_scene.x3d"],
+            ".wrl": ["import_scene.x3d"],
+            ".3ds": ["import_scene.autodesk_3ds"],
+            ".dxf": ["import_scene.dxf"],
+        }
+
+        candidates = importers_by_extension.get(ext, [])
+        if not candidates:
+            raise RuntimeError(f"Unsupported extension: {ext}")
+
+        used_operator = None
+        last_error = None
+        for op_path in candidates:
+            if not op_available(op_path):
+                continue
+            try:
+                invoke_operator(op_path, filepath=str(input_path))
+                used_operator = op_path
+                break
+            except Exception as exc:  # pragma: no cover - blender runtime
+                last_error = str(exc)
+
+        if not used_operator:
+            if last_error:
+                raise RuntimeError(
+                    f"No working importer found for {ext}. Last error: {last_error}"
+                )
+            raise RuntimeError(
+                f"No importer operator available for extension {ext} in this Blender build"
+            )
+        details["import_operator"] = used_operator
 
     details["success"] = True
     details["scene_object_count_after_import"] = len(bpy.context.scene.objects)

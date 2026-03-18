@@ -14,7 +14,7 @@ By default, output files are stored in project-local `output/` instead of next t
 
 - CLI usage from terminal.
 - New empty Blender scene before each import (`read_factory_settings(use_empty=True)`).
-- Wide importer coverage via Blender operators (OBJ, FBX, GLTF/GLB, STL, PLY, USD*, DAE, X3D/WRL, Alembic, and `.blend` open).
+- Wide importer coverage via Blender operators (OBJ, FBX, GLTF/GLB, STL, PLY, USD*, DAE, X3D/WRL, Alembic, `.3ds`, `.dxf` when add-on available, and `.blend` open).
 - Mesh detection across all scene objects.
 - Face counting on all mesh objects.
 - Conditional decimation:
