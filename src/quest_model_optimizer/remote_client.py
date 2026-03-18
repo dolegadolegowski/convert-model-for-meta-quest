@@ -175,6 +175,12 @@ class RemoteWorkerClient:
         parsed = parse.urlparse(url)
         return f"{parsed.scheme}://{parsed.netloc}".lower()
 
+    def _normalize_url(self, url_or_path: str) -> str:
+        parsed = parse.urlparse(url_or_path)
+        if parsed.scheme:
+            return url_or_path
+        return self._url(url_or_path)
+
     def _download_headers_for_url(self, download_url: str) -> dict[str, str]:
         # Do not leak bearer token to external signed-storage URLs.
         same_origin = self._url_origin(download_url) == self._base_origin()
@@ -249,7 +255,8 @@ class RemoteWorkerClient:
         )
 
     def download_job_file(self, claim: JobClaim, destination: Path) -> Path:
-        download_url = claim.download_url or self._url(f"/api/v1/jobs/{claim.job_id}/download")
+        raw_download_url = claim.download_url or f"/api/v1/jobs/{claim.job_id}/download"
+        download_url = self._normalize_url(raw_download_url)
         self.transport.download_file(
             download_url,
             headers=self._download_headers_for_url(download_url),

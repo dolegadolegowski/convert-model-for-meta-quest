@@ -175,6 +175,37 @@ class RemoteClientTests(unittest.TestCase):
         _, _, headers, _ = download_calls[0]
         self.assertIn("Authorization", headers)
 
+    def test_relative_download_path_is_resolved_against_server_url(self) -> None:
+        class RelativePathTransport(FakeTransport):
+            def json_request(self, method, url, headers, payload=None):
+                if "/api/v1/jobs/claim" in url:
+                    return {
+                        "job_id": "job-3",
+                        "input_filename": "mesh.obj",
+                        "download_url": "/api/v1/jobs/job-3/download",
+                    }
+                return super().json_request(method, url, headers, payload)
+
+        transport = RelativePathTransport()
+        client = RemoteWorkerClient(
+            server_url="https://example.org",
+            worker_token="super-secret",
+            worker_name="worker-a",
+            worker_id="worker-a-id",
+            transport=transport,
+        )
+        claim = client.claim_job(worker_id="worker-1", wait_seconds=10)
+        assert claim is not None
+        with tempfile.TemporaryDirectory() as temp_dir:
+            destination = Path(temp_dir) / "mesh.obj"
+            client.download_job_file(claim, destination)
+
+        download_calls = [c for c in transport.calls if c[0] == "download"]
+        self.assertEqual(len(download_calls), 1)
+        _, url, headers, _ = download_calls[0]
+        self.assertEqual(url, "https://example.org/api/v1/jobs/job-3/download")
+        self.assertIn("Authorization", headers)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

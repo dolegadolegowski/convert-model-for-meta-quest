@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.17
+
+- Fixed worker download flow for relative job URLs returned by server claim endpoint.
+- Added URL normalization in remote client to resolve `/api/...` paths against configured `SERVER_URL`.
+- Added regression unit test for relative `download_url` handling to prevent `unknown url type` failures.
+
 ## 0.16
 
 - Added explicit `worker_id` support in register payload for API compatibility.
