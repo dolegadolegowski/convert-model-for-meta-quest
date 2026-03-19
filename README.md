@@ -118,6 +118,9 @@ python3 scripts/run_worker.py \
   --token YOUR_TOKEN \
   --worker-id worker-$(hostname)-$(date +%s) \
   --worker-name mac-mini-worker-01 \
+  --http-timeout-seconds 60 \
+  --download-timeout-seconds 180 \
+  --upload-timeout-seconds 600 \
   --reconnect-after-failures 3 \
   --max-download-bytes 1073741824 \
   --with-gui
@@ -131,6 +134,9 @@ python3 scripts/run_worker.py \
   --token YOUR_TOKEN \
   --worker-id worker-$(hostname)-$(date +%s) \
   --worker-name mac-mini-worker-01 \
+  --http-timeout-seconds 60 \
+  --download-timeout-seconds 180 \
+  --upload-timeout-seconds 600 \
   --reconnect-after-failures 3 \
   --max-download-bytes 1073741824 \
   --no-gui

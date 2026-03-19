@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.26
+
+- Added separate network timeouts for API, download, and upload operations.
+- Exposed CLI flags: `--http-timeout-seconds`, `--download-timeout-seconds`, `--upload-timeout-seconds`.
+- Increased resilience against slow/unstable uploads without slowing claim/heartbeat timeout behavior.
+
 ## 0.25
 
 - Added worker auto-reconnect by forcing session re-registration after repeated loop failures.

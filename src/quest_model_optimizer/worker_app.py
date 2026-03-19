@@ -60,6 +60,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximum allowed downloaded input size in bytes",
     )
     parser.add_argument(
+        "--http-timeout-seconds",
+        type=int,
+        default=60,
+        help="Base HTTP timeout for API calls (register/claim/heartbeat)",
+    )
+    parser.add_argument(
+        "--download-timeout-seconds",
+        type=int,
+        default=180,
+        help="Timeout for model download requests",
+    )
+    parser.add_argument(
+        "--upload-timeout-seconds",
+        type=int,
+        default=600,
+        help="Timeout for result upload requests",
+    )
+    parser.add_argument(
         "--reconnect-after-failures",
         type=int,
         default=3,
@@ -113,7 +131,9 @@ def main(argv: list[str] | None = None) -> int:
             worker_token=args.token,
             worker_name=args.worker_name,
             worker_id=args.worker_id,
-            timeout=max(10, int(args.poll_wait) + 30),
+            timeout=max(10, int(args.http_timeout_seconds)),
+            download_timeout=max(10, int(args.download_timeout_seconds)),
+            upload_timeout=max(10, int(args.upload_timeout_seconds)),
             allow_insecure_http=bool(args.allow_insecure_http),
             heartbeat_interval_hint=args.heartbeat_interval,
             lease_timeout_hint=args.lease_timeout,

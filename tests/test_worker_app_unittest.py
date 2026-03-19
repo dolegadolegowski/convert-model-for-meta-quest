@@ -46,6 +46,27 @@ class WorkerAppTests(unittest.TestCase):
         )
         self.assertEqual(rc, 0)
 
+    def test_timeout_flags_are_accepted(self) -> None:
+        rc = main(
+            [
+                "--server-url",
+                "https://example.org",
+                "--token",
+                "abc",
+                "--worker-name",
+                "Timeout Worker",
+                "--http-timeout-seconds",
+                "75",
+                "--download-timeout-seconds",
+                "240",
+                "--upload-timeout-seconds",
+                "900",
+                "--no-gui",
+                "--dry-run",
+            ]
+        )
+        self.assertEqual(rc, 0)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

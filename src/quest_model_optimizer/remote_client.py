@@ -50,8 +50,15 @@ class TransportProtocol(Protocol):
 class UrllibTransport:
     """Default network transport using urllib from stdlib."""
 
-    def __init__(self, timeout: int = 60) -> None:
-        self.timeout = timeout
+    def __init__(
+        self,
+        timeout: int = 60,
+        download_timeout: int | None = None,
+        upload_timeout: int | None = None,
+    ) -> None:
+        self.timeout = max(1, int(timeout))
+        self.download_timeout = max(1, int(download_timeout or self.timeout))
+        self.upload_timeout = max(1, int(upload_timeout or max(self.timeout, 300)))
 
     def json_request(
         self,
@@ -81,7 +88,7 @@ class UrllibTransport:
         req = request.Request(url=url, headers=headers, method="GET")
         destination.parent.mkdir(parents=True, exist_ok=True)
         try:
-            with request.urlopen(req, timeout=self.timeout) as resp, destination.open("wb") as handle:
+            with request.urlopen(req, timeout=self.download_timeout) as resp, destination.open("wb") as handle:
                 while True:
                     chunk = resp.read(1024 * 64)
                     if not chunk:
@@ -126,7 +133,7 @@ class UrllibTransport:
         req_headers["Content-Type"] = f"multipart/form-data; boundary={boundary}"
         req = request.Request(url=url, data=bytes(body), headers=req_headers, method="POST")
         try:
-            with request.urlopen(req, timeout=self.timeout) as resp:
+            with request.urlopen(req, timeout=self.upload_timeout) as resp:
                 payload = resp.read()
                 if not payload:
                     return None
@@ -146,6 +153,8 @@ class RemoteWorkerClient:
         worker_name: str,
         worker_id: str,
         timeout: int = 60,
+        download_timeout: int | None = None,
+        upload_timeout: int | None = None,
         transport: TransportProtocol | None = None,
         allow_insecure_http: bool = False,
         heartbeat_interval_hint: int | None = None,
@@ -165,7 +174,11 @@ class RemoteWorkerClient:
         self.allow_insecure_http = allow_insecure_http
         self.heartbeat_interval_hint = heartbeat_interval_hint
         self.lease_timeout_hint = lease_timeout_hint
-        self.transport: TransportProtocol = transport or UrllibTransport(timeout=timeout)
+        self.transport: TransportProtocol = transport or UrllibTransport(
+            timeout=timeout,
+            download_timeout=download_timeout,
+            upload_timeout=upload_timeout,
+        )
 
     def _url(self, path: str) -> str:
         normalized = path if path.startswith("/") else f"/{path}"
