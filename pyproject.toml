@@ -1,6 +1,6 @@
 [project]
 name = "convert-model-for-meta-quest"
-version = "0.24"
+version = "0.25"
 description = "CLI pipeline that imports 3D models in Blender, enforces face limits, cleans geometry, and exports GLB."
 readme = "README.md"
 requires-python = ">=3.10"

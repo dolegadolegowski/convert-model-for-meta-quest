@@ -13,6 +13,17 @@ from urllib import error, parse, request
 from .worker_models import JobClaim, WorkerSession
 
 
+class ApiRequestError(RuntimeError):
+    """Raised when server responds with non-2xx HTTP status."""
+
+    def __init__(self, status_code: int, method: str, url: str, body: str) -> None:
+        self.status_code = int(status_code)
+        self.method = method
+        self.url = url
+        self.body = body
+        super().__init__(f"HTTP {status_code} for {method} {url}: {body}")
+
+
 class TransportProtocol(Protocol):
     def json_request(
         self,
@@ -64,7 +75,7 @@ class UrllibTransport:
                 return json.loads(body.decode("utf-8"))
         except error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"HTTP {exc.code} for {method} {url}: {body}") from exc
+            raise ApiRequestError(status_code=exc.code, method=method, url=url, body=body) from exc
 
     def download_file(self, url: str, headers: dict[str, str], destination: Path) -> None:
         req = request.Request(url=url, headers=headers, method="GET")
@@ -78,7 +89,7 @@ class UrllibTransport:
                     handle.write(chunk)
         except error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"HTTP {exc.code} for GET {url}: {body}") from exc
+            raise ApiRequestError(status_code=exc.code, method="GET", url=url, body=body) from exc
 
     def upload_multipart(
         self,
@@ -122,7 +133,7 @@ class UrllibTransport:
                 return json.loads(payload.decode("utf-8"))
         except error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"HTTP {exc.code} for multipart POST {url}: {body}") from exc
+            raise ApiRequestError(status_code=exc.code, method="POST", url=url, body=body) from exc
 
 
 class RemoteWorkerClient:

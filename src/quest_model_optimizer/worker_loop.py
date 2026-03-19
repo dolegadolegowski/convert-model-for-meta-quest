@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Protocol
 
-from .remote_client import RemoteWorkerClient
+from .remote_client import ApiRequestError, RemoteWorkerClient
 from .worker_models import JobClaim
 from .worker_processor import PipelineProcessor
 from .worker_security import compute_sha256, validate_download_file
@@ -56,6 +56,7 @@ class LoopConfig:
     once: bool = False
     heartbeat_interval_fallback: int = 15
     max_download_bytes: int = 1024 * 1024 * 1024
+    reconnect_after_failures: int = 3
 
 
 class ExponentialBackoff:
@@ -96,6 +97,7 @@ class WorkerLoop:
         self.current_job_id: str | None = None
         self._heartbeat_thread: threading.Thread | None = None
         self._heartbeat_interval = self.config.heartbeat_interval_fallback
+        self._consecutive_failures = 0
 
         self.download_dir = self.work_root / "downloads"
         self.output_dir = self.work_root / "output"
@@ -117,6 +119,7 @@ class WorkerLoop:
                 )
                 self.observer.set_connection_status(True)
                 backoff.reset()
+                self._consecutive_failures = 0
 
                 if claim is None:
                     if self.config.once:
@@ -128,6 +131,16 @@ class WorkerLoop:
                     return 0
             except Exception as exc:
                 self.observer.set_connection_status(False)
+                self._consecutive_failures += 1
+                if self._should_reconnect(exc):
+                    self._reset_worker_session(reason=f"server/session error: {exc}")
+                elif (
+                    self.worker_id
+                    and self._consecutive_failures >= max(1, int(self.config.reconnect_after_failures))
+                ):
+                    self._reset_worker_session(
+                        reason=f"consecutive failures reached {self._consecutive_failures}"
+                    )
                 delay = backoff.next_delay()
                 self.logger.error("Worker loop error: %s", exc)
                 if self.stop_event.is_set() or self.config.once:
@@ -164,7 +177,27 @@ class WorkerLoop:
                 except Exception as exc:
                     self.observer.set_connection_status(False)
                     self.logger.warning("Heartbeat failed: %s", exc)
+                    if self._should_reconnect(exc):
+                        self._reset_worker_session(reason=f"heartbeat rejected: {exc}")
             time.sleep(self._heartbeat_interval)
+
+    def _reset_worker_session(self, reason: str) -> None:
+        if not self.worker_id:
+            return
+        self.logger.warning("Resetting worker session worker_id=%s (%s)", self.worker_id, reason)
+        self.worker_id = None
+
+    @staticmethod
+    def _should_reconnect(exc: Exception) -> bool:
+        if isinstance(exc, ApiRequestError):
+            if exc.status_code in {401, 403, 404, 410, 412}:
+                return True
+            if exc.status_code == 409:
+                body = (exc.body or "").lower()
+                reconnect_tokens = ("worker", "lease", "session", "not found", "expired", "invalid")
+                return any(token in body for token in reconnect_tokens)
+            return False
+        return False
 
     def _retry(self, fn, operation_name: str, attempts: int = 5):
         backoff = ExponentialBackoff(max_seconds=self.config.max_backoff_seconds)

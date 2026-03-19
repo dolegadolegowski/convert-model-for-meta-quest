@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.25
+
+- Added worker auto-reconnect by forcing session re-registration after repeated loop failures.
+- Added API-aware reconnect triggers for HTTP session/lease errors (401/403/404/410/412 and selected 409 cases).
+- Added CLI flag `--reconnect-after-failures` and regression test for reconnect-after-claim-failure scenario.
+
 ## 0.24
 
 - Expanded worker upload checksum compatibility: metadata now includes checksum aliases in top-level, `checksums`, and `worker_metadata`.

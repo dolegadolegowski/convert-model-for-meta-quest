@@ -108,6 +108,7 @@ Security defaults:
 - For local development only, `http://` can be enabled using `--allow-insecure-http`.
 - Bearer token is attached only for same-origin download endpoints; external signed URLs are fetched without auth header.
 - Downloaded file is validated against optional job checksum (`sha256` / `input_sha256`) and size limit (`--max-download-bytes`).
+- Worker auto-reconnects by re-registering session after repeated failures (configurable with `--reconnect-after-failures`).
 
 Run worker with GUI:
 
@@ -117,6 +118,7 @@ python3 scripts/run_worker.py \
   --token YOUR_TOKEN \
   --worker-id worker-$(hostname)-$(date +%s) \
   --worker-name mac-mini-worker-01 \
+  --reconnect-after-failures 3 \
   --max-download-bytes 1073741824 \
   --with-gui
 ```
@@ -129,6 +131,7 @@ python3 scripts/run_worker.py \
   --token YOUR_TOKEN \
   --worker-id worker-$(hostname)-$(date +%s) \
   --worker-name mac-mini-worker-01 \
+  --reconnect-after-failures 3 \
   --max-download-bytes 1073741824 \
   --no-gui
 ```

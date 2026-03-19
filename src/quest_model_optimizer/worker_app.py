@@ -59,6 +59,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=1024 * 1024 * 1024,
         help="Maximum allowed downloaded input size in bytes",
     )
+    parser.add_argument(
+        "--reconnect-after-failures",
+        type=int,
+        default=3,
+        help="Force worker re-register after this many consecutive loop failures",
+    )
     parser.add_argument("--once", action="store_true", help="Run single claim cycle and exit")
     parser.add_argument("--dry-run", action="store_true", help="Validate config and exit without network calls")
 
@@ -134,6 +140,7 @@ def main(argv: list[str] | None = None) -> int:
             poll_wait_seconds=args.poll_wait,
             once=args.once,
             max_download_bytes=args.max_download_bytes,
+            reconnect_after_failures=max(1, int(args.reconnect_after_failures)),
         ),
     )
 
