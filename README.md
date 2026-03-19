@@ -111,7 +111,7 @@ Security defaults:
 - Bearer token is attached only for same-origin download endpoints; external signed URLs are fetched without auth header.
 - Downloaded file is validated against optional job checksum (`sha256` / `input_sha256`) and size limit (`--max-download-bytes`).
 - Worker auto-generates identity (`worker_name` from hostname and `worker_id` as `worker-<hostname>-<short_uuid>`).
-- Worker auto-reconnects by re-registering session after repeated failures.
+- Worker auto-reconnects by re-registering session after repeated failures and after transient connectivity loss (for example during server restart).
 
 Minimal worker start (recommended):
 

@@ -100,6 +100,7 @@ class WorkerLoop:
         self._heartbeat_thread: threading.Thread | None = None
         self._heartbeat_interval = self.config.heartbeat_interval_fallback
         self._consecutive_failures = 0
+        self._heartbeat_consecutive_failures = 0
         self._heartbeat_missing_config_logged = False
 
         self.download_dir = self.work_root / "downloads"
@@ -216,8 +217,8 @@ class WorkerLoop:
             except Exception as exc:
                 self.observer.set_connection_status(False)
                 self._consecutive_failures += 1
-                if self._should_reconnect(exc):
-                    self._reset_worker_session(reason=f"server/session error: {exc}")
+                if self._should_reconnect(exc) or self._is_transient_network_error(exc):
+                    self._reset_worker_session(reason=f"server/session connectivity error: {exc}")
                 elif (
                     self.worker_id
                     and self._consecutive_failures >= max(1, int(self.config.reconnect_after_failures))
@@ -244,6 +245,7 @@ class WorkerLoop:
         session = self.client.register_worker()
         self.worker_id = session.worker_id
         self._heartbeat_interval = max(5, int(session.heartbeat_interval or self.config.heartbeat_interval_fallback))
+        self._heartbeat_consecutive_failures = 0
         if session.runtime_config:
             self._apply_runtime_config(session.runtime_config, source="register")
         self.logger.info("Registered worker_id=%s", self.worker_id)
@@ -270,14 +272,20 @@ class WorkerLoop:
                             "Heartbeat response missing runtime config; keeping current worker settings."
                         )
                         self._heartbeat_missing_config_logged = True
+                    self._heartbeat_consecutive_failures = 0
                     self.observer.set_connection_status(True)
                     self.logger.debug("Heartbeat sent for worker_id=%s", self.worker_id)
                 except Exception as exc:
                     self.observer.set_connection_status(False)
                     self.logger.warning("Heartbeat failed: %s", exc)
                     self._heartbeat_missing_config_logged = False
+                    self._heartbeat_consecutive_failures += 1
                     if self._should_reconnect(exc):
                         self._reset_worker_session(reason=f"heartbeat rejected: {exc}")
+                    elif self._is_transient_network_error(exc) and self._heartbeat_consecutive_failures >= max(
+                        1, int(self.config.reconnect_after_failures)
+                    ):
+                        self._reset_worker_session(reason=f"heartbeat connectivity lost: {exc}")
             time.sleep(self._heartbeat_interval)
 
     def _reset_worker_session(self, reason: str) -> None:
@@ -285,6 +293,7 @@ class WorkerLoop:
             return
         self.logger.warning("Resetting worker session worker_id=%s (%s)", self.worker_id, reason)
         self.worker_id = None
+        self._heartbeat_consecutive_failures = 0
 
     @staticmethod
     def _should_reconnect(exc: Exception) -> bool:

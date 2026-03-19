@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.34
+
+- Improved auto-reconnect behavior after server restart/network loss.
+- Worker now resets stale session and re-registers on transient connectivity failures (connection reset/refused/timeouts, selected HTTP 5xx).
+- Added heartbeat-based session reset after repeated transient failures.
+- Added unit test covering reconnect flow after transient claim disconnect.
+
 ## 0.33
 
 - Updated decimation target behavior for over-limit models to aim for a final face window of `87.5%-100%` of face limit.

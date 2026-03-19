@@ -257,6 +257,63 @@ class WorkerLoopTests(unittest.TestCase):
         self.assertGreaterEqual(client.register_calls, 2)
         self.assertEqual(client.upload_calls, 1)
 
+    def test_reconnects_by_reregistering_after_transient_claim_disconnect(self) -> None:
+        class TransientReconnectClient(FakeClient):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_calls = 0
+                self.loop_ref = None
+
+            def register_worker(self) -> WorkerSession:
+                self.register_calls += 1
+                return WorkerSession(worker_id=f"worker-{self.register_calls}", heartbeat_interval=60)
+
+            def claim_job(self, worker_id: str, wait_seconds: int = 30):
+                self.claim_count += 1
+                if self.claim_count == 1:
+                    raise OSError(54, "Connection reset by peer")
+                if self.claim_count == 2:
+                    return JobClaim(
+                        job_id="job-transient-1",
+                        input_filename="HOL.obj",
+                        download_url=None,
+                        payload={},
+                    )
+                return None
+
+            def upload_result(
+                self,
+                worker_id: str,
+                claim: JobClaim,
+                optimized_file: Path,
+                report_file: Path,
+                summary: str,
+                progress_callback=None,
+            ):
+                self.upload_calls += 1
+                if self.loop_ref is not None:
+                    self.loop_ref.stop_event.set()
+                return {"ok": True}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            observer = Observer()
+            client = TransientReconnectClient()
+            loop = WorkerLoop(
+                client=client,
+                processor=SuccessProcessor(),
+                work_root=Path(temp_dir),
+                logger=logging.getLogger("worker-loop-transient-reconnect"),
+                observer=observer,
+                config=LoopConfig(once=False, reconnect_after_failures=3, poll_wait_seconds=1),
+            )
+            client.loop_ref = loop
+            with mock.patch("quest_model_optimizer.worker_loop.time.sleep", return_value=None):
+                rc = loop.run_forever()
+
+        self.assertEqual(rc, 0)
+        self.assertGreaterEqual(client.register_calls, 2)
+        self.assertEqual(client.upload_calls, 1)
+
     def test_register_runtime_config_overrides_loop_defaults(self) -> None:
         class RuntimeConfigClient(FakeClient):
             def __init__(self) -> None:
