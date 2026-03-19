@@ -176,6 +176,11 @@ Transfer progress log lines:
 2026-03-19 16:10:55,222 | INFO | Upload 18_heart_optimized.glb [##############......]  70% (22.1MB / 31.6MB)
 ```
 
+Upload idempotency note:
+
+- If network drops right after upload send, worker may retry.
+- If server responds with conflict meaning job is already `DONE`, worker treats that as successful completion to avoid duplicate-failure false alarms.
+
 Legacy CLI compatibility (deprecated fallbacks):
 
 - `--gui` is accepted as alias of `--with-gui`.

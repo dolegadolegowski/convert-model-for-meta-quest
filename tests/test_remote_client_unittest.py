@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from urllib import parse
 
-from quest_model_optimizer.remote_client import RemoteWorkerClient
+from quest_model_optimizer.remote_client import ApiRequestError, RemoteWorkerClient
 
 
 class FakeTransport:
@@ -356,6 +356,43 @@ class RemoteClientTests(unittest.TestCase):
                     report_file=report_file,
                     summary="mesh.obj: 10 -> 8 (decimate)",
                 )
+
+    def test_upload_result_treats_done_conflict_as_success(self) -> None:
+        class DoneConflictTransport(FakeTransport):
+            def upload_multipart(self, url, headers, fields, files, progress_callback=None):
+                raise ApiRequestError(
+                    status_code=409,
+                    method="POST",
+                    url=url,
+                    body='{"code":"JOB_STATUS_CONFLICT","message":"Job is not awaiting result in status DONE"}',
+                )
+
+        transport = DoneConflictTransport()
+        client = RemoteWorkerClient(
+            server_url="https://example.org",
+            worker_token="token",
+            worker_name="worker-a",
+            worker_id="worker-a-id",
+            transport=transport,
+        )
+        claim = client.claim_job(worker_id="worker-1", wait_seconds=10)
+        assert claim is not None
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            output_file = root / "out.glb"
+            report_file = root / "report.json"
+            output_file.write_bytes(b"binary")
+            report_file.write_text("{}", encoding="utf-8")
+            response = client.upload_result(
+                worker_id="worker-1",
+                claim=claim,
+                optimized_file=output_file,
+                report_file=report_file,
+                summary="mesh.obj: 10 -> 8 (decimate)",
+            )
+
+        self.assertEqual(response, {"ok": True, "status": "already-completed"})
 
     def test_http_is_rejected_without_override(self) -> None:
         with self.assertRaises(ValueError):

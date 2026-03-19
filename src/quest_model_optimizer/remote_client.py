@@ -392,6 +392,21 @@ class RemoteWorkerClient:
                 digest.update(chunk)
         return digest.hexdigest().lower()
 
+    @staticmethod
+    def _is_result_already_accepted_error(exc: ApiRequestError) -> bool:
+        if exc.status_code != 409:
+            return False
+        body = (exc.body or "").lower()
+        accepted_tokens = (
+            "job_status_conflict",
+            "not awaiting result",
+            "status done",
+            "already processed",
+            "already completed",
+            "already has result",
+        )
+        return any(token in body for token in accepted_tokens)
+
     def _download_headers_for_url(self, download_url: str) -> dict[str, str]:
         # Do not leak bearer token to external signed-storage URLs.
         same_origin = self._url_origin(download_url) == self._base_origin()
@@ -580,13 +595,18 @@ class RemoteWorkerClient:
             "result_file": optimized_file,
             "report_file": report_file,
         }
-        return self.transport.upload_multipart(
-            url=self._url(f"/api/v1/jobs/{claim.job_id}/result"),
-            headers=self._headers(),
-            fields=fields,
-            files=files,
-            progress_callback=progress_callback,
-        )
+        try:
+            return self.transport.upload_multipart(
+                url=self._url(f"/api/v1/jobs/{claim.job_id}/result"),
+                headers=self._headers(),
+                fields=fields,
+                files=files,
+                progress_callback=progress_callback,
+            )
+        except ApiRequestError as exc:
+            if self._is_result_already_accepted_error(exc):
+                return {"ok": True, "status": "already-completed"}
+            raise
 
     def report_failure(self, worker_id: str, claim: JobClaim, error_message: str) -> dict[str, Any] | None:
         payload = {

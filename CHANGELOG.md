@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.29
+
+- Added idempotent upload handling: HTTP 409 conflicts indicating server-side `DONE` state are now treated as successful upload completion.
+- Reduced false-positive worker errors for transient network issues by logging loop-level network resets/timeouts as warning.
+- Added unit test for upload conflict recovery (`JOB_STATUS_CONFLICT` / status `DONE`).
+
 ## 0.28
 
 - Added transfer progress logging for remote worker download and upload operations with percentage progress bars.

@@ -226,7 +226,10 @@ class WorkerLoop:
                         reason=f"consecutive failures reached {self._consecutive_failures}"
                     )
                 delay = backoff.next_delay()
-                self.logger.error("Worker loop error: %s", exc)
+                if self._is_transient_network_error(exc):
+                    self.logger.warning("Transient worker loop network error: %s", exc)
+                else:
+                    self.logger.error("Worker loop error: %s", exc)
                 if self.stop_event.is_set() or self.config.once:
                     return 1
                 backoff.max_seconds = max(1, int(self.config.max_backoff_seconds))
@@ -414,7 +417,7 @@ class WorkerLoop:
         self.observer.set_geometry_summary(summary_msg)
         self.logger.info(summary_msg)
 
-        self._retry(
+        upload_response = self._retry(
             lambda: self.client.upload_result(
                 worker_id=self.worker_id or "",
                 claim=claim,
@@ -426,6 +429,11 @@ class WorkerLoop:
             operation_name="upload_result",
             attempts=max(1, int(self.config.upload_retries)),
         )
+        if isinstance(upload_response, dict) and upload_response.get("status") == "already-completed":
+            self.logger.warning(
+                "Server already finalized result for job_id=%s after transient upload disruption.",
+                claim.job_id,
+            )
 
         upload_msg = f"{utc_timestamp()} | Upload status: SUCCESS"
         self.observer.set_upload_status(upload_msg)
