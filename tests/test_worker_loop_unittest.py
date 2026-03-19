@@ -58,14 +58,33 @@ class FakeClient:
             payload={},
         )
 
-    def download_job_file(self, claim: JobClaim, destination: Path, worker_id: str | None = None):
+    def download_job_file(
+        self,
+        claim: JobClaim,
+        destination: Path,
+        worker_id: str | None = None,
+        progress_callback=None,
+    ):
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text("mesh")
+        if progress_callback:
+            progress_callback(destination.stat().st_size, destination.stat().st_size)
         return destination
 
-    def upload_result(self, worker_id: str, claim: JobClaim, optimized_file: Path, report_file: Path, summary: str):
+    def upload_result(
+        self,
+        worker_id: str,
+        claim: JobClaim,
+        optimized_file: Path,
+        report_file: Path,
+        summary: str,
+        progress_callback=None,
+    ):
         self.upload_calls += 1
         self.last_upload_claim = claim
+        if progress_callback:
+            total = optimized_file.stat().st_size + report_file.stat().st_size
+            progress_callback(total, total)
         return {"ok": True}
 
     def report_failure(self, worker_id: str, claim: JobClaim, error_message: str):
@@ -205,7 +224,15 @@ class WorkerLoopTests(unittest.TestCase):
                     )
                 return None
 
-            def upload_result(self, worker_id: str, claim: JobClaim, optimized_file: Path, report_file: Path, summary: str):
+            def upload_result(
+                self,
+                worker_id: str,
+                claim: JobClaim,
+                optimized_file: Path,
+                report_file: Path,
+                summary: str,
+                progress_callback=None,
+            ):
                 self.upload_calls += 1
                 if self.loop_ref is not None:
                     self.loop_ref.stop_event.set()
@@ -339,6 +366,31 @@ class WorkerLoopTests(unittest.TestCase):
         self.assertEqual(loop._heartbeat_interval, 13)
         self.assertEqual(loop.config.download_retries, 6)
         self.assertTrue(client.runtime_updates)
+
+    def test_retry_extends_attempts_for_transient_network_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            loop = WorkerLoop(
+                client=FakeClient(),
+                processor=SuccessProcessor(),
+                work_root=Path(temp_dir),
+                logger=logging.getLogger("worker-loop-transient-retry"),
+                observer=Observer(),
+                config=LoopConfig(once=True),
+            )
+
+            attempts = {"count": 0}
+
+            def flaky_operation():
+                attempts["count"] += 1
+                if attempts["count"] < 4:
+                    raise OSError(54, "Connection reset by peer")
+                return "ok"
+
+            with mock.patch("quest_model_optimizer.worker_loop.time.sleep", return_value=None):
+                result = loop._retry(flaky_operation, operation_name="upload_result", attempts=2)
+
+        self.assertEqual(result, "ok")
+        self.assertEqual(attempts["count"], 4)
 
 
 if __name__ == "__main__":

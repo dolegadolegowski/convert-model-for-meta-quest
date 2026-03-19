@@ -169,6 +169,13 @@ Example runtime-config log line:
 2026-03-19 12:10:20,512 | INFO | Applied server runtime config from register: download_retries=4, poll_wait_seconds=20, upload_timeout_seconds=900
 ```
 
+Transfer progress log lines:
+
+```text
+2026-03-19 16:10:20,111 | INFO | Download 18_heart.obj [########............]  40% (12.4MB / 31.0MB)
+2026-03-19 16:10:55,222 | INFO | Upload 18_heart_optimized.glb [##############......]  70% (22.1MB / 31.6MB)
+```
+
 Legacy CLI compatibility (deprecated fallbacks):
 
 - `--gui` is accepted as alias of `--with-gui`.

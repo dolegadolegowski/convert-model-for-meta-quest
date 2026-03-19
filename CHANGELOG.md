@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.28
+
+- Added transfer progress logging for remote worker download and upload operations with percentage progress bars.
+- Suppressed repetitive heartbeat runtime-config INFO logs; now warning is logged only when heartbeat response misses runtime config.
+- Improved retry resilience for transient network failures (timeouts, connection reset, broken pipe) by extending retries up to 4 attempts.
+- Added unit tests for transfer progress callback flow and transient retry extension.
+
 ## 0.27
 
 - Simplified worker startup so only `--server-url` and `--token` are required; worker identity is auto-generated.

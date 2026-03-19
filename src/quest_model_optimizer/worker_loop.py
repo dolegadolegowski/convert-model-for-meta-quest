@@ -8,7 +8,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Protocol
+from typing import Callable, Protocol
 
 from .remote_client import ApiRequestError, RemoteWorkerClient
 from .worker_models import JobClaim
@@ -100,6 +100,7 @@ class WorkerLoop:
         self._heartbeat_thread: threading.Thread | None = None
         self._heartbeat_interval = self.config.heartbeat_interval_fallback
         self._consecutive_failures = 0
+        self._heartbeat_missing_config_logged = False
 
         self.download_dir = self.work_root / "downloads"
         self.output_dir = self.work_root / "output"
@@ -108,7 +109,66 @@ class WorkerLoop:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.report_dir.mkdir(parents=True, exist_ok=True)
 
-    def _apply_runtime_config(self, runtime_config: dict[str, int], source: str) -> None:
+    @staticmethod
+    def _format_size(num_bytes: int | None) -> str:
+        if num_bytes is None:
+            return "?"
+        value = float(num_bytes)
+        units = ("B", "KB", "MB", "GB", "TB")
+        for unit in units:
+            if value < 1024.0 or unit == units[-1]:
+                return f"{value:.1f}{unit}"
+            value /= 1024.0
+        return f"{num_bytes}B"
+
+    @staticmethod
+    def _progress_bar(percent: int, width: int = 24) -> str:
+        bounded = max(0, min(100, int(percent)))
+        filled = int((bounded / 100.0) * width)
+        return f"[{'#' * filled}{'.' * (width - filled)}] {bounded:3d}%"
+
+    def _make_transfer_progress_callback(
+        self,
+        operation: str,
+        filename: str,
+        step_percent: int = 5,
+        unknown_step_bytes: int = 5 * 1024 * 1024,
+    ) -> Callable[[int, int | None], None]:
+        last_percent_bucket = -1
+        last_unknown_bucket = -1
+
+        def _callback(transferred: int, total: int | None) -> None:
+            nonlocal last_percent_bucket, last_unknown_bucket
+            transferred = max(0, int(transferred))
+            if total is not None and total > 0:
+                percent = min(100, int((transferred * 100) / total))
+                bucket = min(100, (percent // max(1, step_percent)) * max(1, step_percent))
+                is_complete = transferred >= total
+                should_log = is_complete or bucket > last_percent_bucket or last_percent_bucket < 0
+                if should_log:
+                    last_percent_bucket = bucket
+                    self.logger.info(
+                        "%s %s %s (%s / %s)",
+                        operation,
+                        filename,
+                        self._progress_bar(percent),
+                        self._format_size(transferred),
+                        self._format_size(total),
+                    )
+            else:
+                bucket = transferred // max(1, unknown_step_bytes)
+                if bucket > last_unknown_bucket or (transferred == 0 and last_unknown_bucket < 0):
+                    last_unknown_bucket = bucket
+                    self.logger.info(
+                        "%s %s [stream] (%s transferred)",
+                        operation,
+                        filename,
+                        self._format_size(transferred),
+                    )
+
+        return _callback
+
+    def _apply_runtime_config(self, runtime_config: dict[str, int], source: str, log_applied: bool = True) -> None:
         if not runtime_config:
             return
 
@@ -126,8 +186,9 @@ class WorkerLoop:
             self.config.upload_retries = max(1, int(runtime_config["upload_retries"]))
 
         self.client.apply_runtime_config(runtime_config)
-        ordered = ", ".join(f"{key}={runtime_config[key]}" for key in sorted(runtime_config))
-        self.logger.info("Applied server runtime config from %s: %s", source, ordered)
+        if log_applied:
+            ordered = ", ".join(f"{key}={runtime_config[key]}" for key in sorted(runtime_config))
+            self.logger.info("Applied server runtime config from %s: %s", source, ordered)
 
     def run_forever(self) -> int:
         backoff = ExponentialBackoff(max_seconds=self.config.max_backoff_seconds)
@@ -199,12 +260,19 @@ class WorkerLoop:
                 try:
                     heartbeat_runtime = self.client.heartbeat(self.worker_id)
                     if heartbeat_runtime:
-                        self._apply_runtime_config(heartbeat_runtime, source="heartbeat")
+                        self._apply_runtime_config(heartbeat_runtime, source="heartbeat", log_applied=False)
+                        self._heartbeat_missing_config_logged = False
+                    elif not self._heartbeat_missing_config_logged:
+                        self.logger.warning(
+                            "Heartbeat response missing runtime config; keeping current worker settings."
+                        )
+                        self._heartbeat_missing_config_logged = True
                     self.observer.set_connection_status(True)
                     self.logger.debug("Heartbeat sent for worker_id=%s", self.worker_id)
                 except Exception as exc:
                     self.observer.set_connection_status(False)
                     self.logger.warning("Heartbeat failed: %s", exc)
+                    self._heartbeat_missing_config_logged = False
                     if self._should_reconnect(exc):
                         self._reset_worker_session(reason=f"heartbeat rejected: {exc}")
             time.sleep(self._heartbeat_interval)
@@ -227,25 +295,52 @@ class WorkerLoop:
             return False
         return False
 
+    @staticmethod
+    def _is_transient_network_error(exc: Exception) -> bool:
+        if isinstance(exc, ApiRequestError):
+            return exc.status_code in {408, 425, 429, 500, 502, 503, 504}
+
+        if isinstance(exc, OSError) and exc.errno in {32, 54, 60, 104, 110}:
+            return True
+
+        error_text = str(exc).lower()
+        transient_tokens = (
+            "timed out",
+            "timeout",
+            "connection reset",
+            "broken pipe",
+            "temporarily unavailable",
+            "connection aborted",
+            "connection refused",
+            "network is unreachable",
+        )
+        return any(token in error_text for token in transient_tokens)
+
     def _retry(self, fn, operation_name: str, attempts: int = 5):
         backoff = ExponentialBackoff(max_seconds=self.config.max_backoff_seconds)
         last_exc: Exception | None = None
-        for attempt in range(1, attempts + 1):
+        requested_attempts = max(1, int(attempts))
+        effective_attempts = requested_attempts
+        attempt = 0
+        while attempt < effective_attempts:
+            attempt += 1
             try:
                 return fn()
             except Exception as exc:  # pragma: no cover - retry branch depends on runtime failures
                 last_exc = exc
+                if self._is_transient_network_error(exc):
+                    effective_attempts = max(effective_attempts, 4)
                 delay = backoff.next_delay()
                 self.logger.warning(
                     "%s failed (attempt %s/%s): %s",
                     operation_name,
                     attempt,
-                    attempts,
+                    effective_attempts,
                     exc,
                 )
-                if attempt < attempts:
+                if attempt < effective_attempts:
                     time.sleep(delay)
-        raise RuntimeError(f"{operation_name} failed after {attempts} attempts: {last_exc}")
+        raise RuntimeError(f"{operation_name} failed after {effective_attempts} attempts: {last_exc}")
 
     def _handle_job(self, claim: JobClaim) -> None:
         self.current_job_id = claim.job_id
@@ -260,6 +355,7 @@ class WorkerLoop:
                 claim=claim,
                 destination=download_path,
                 worker_id=self.worker_id,
+                progress_callback=self._make_transfer_progress_callback("Download", download_path.name),
             ),
             operation_name="download",
             attempts=max(1, int(self.config.download_retries)),
@@ -325,6 +421,7 @@ class WorkerLoop:
                 optimized_file=outcome.output_path,
                 report_file=outcome.report_path,
                 summary=summary,
+                progress_callback=self._make_transfer_progress_callback("Upload", output_path.name),
             ),
             operation_name="upload_result",
             attempts=max(1, int(self.config.upload_retries)),

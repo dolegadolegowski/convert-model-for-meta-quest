@@ -28,13 +28,19 @@ class FakeTransport:
             }
         return {"ok": True}
 
-    def download_file(self, url, headers, destination: Path):
+    def download_file(self, url, headers, destination: Path, progress_callback=None):
         self.calls.append(("download", url, headers, destination))
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text("mesh")
+        if progress_callback:
+            size = destination.stat().st_size
+            progress_callback(size, size)
 
-    def upload_multipart(self, url, headers, fields, files):
+    def upload_multipart(self, url, headers, fields, files, progress_callback=None):
         self.calls.append(("upload", url, fields, files))
+        if progress_callback:
+            total = sum(path.stat().st_size for path in files.values())
+            progress_callback(total, total)
         return {"ok": True}
 
 
@@ -89,6 +95,50 @@ class RemoteClientTests(unittest.TestCase):
         self.assertEqual(checksums.get("result_sha256"), expected_result_checksum)
         worker_metadata = metadata.get("worker_metadata") or {}
         self.assertEqual(worker_metadata.get("result_checksum"), expected_result_checksum)
+
+    def test_download_and_upload_emit_progress_callbacks(self) -> None:
+        transport = FakeTransport()
+        client = RemoteWorkerClient(
+            server_url="https://example.org",
+            worker_token="token",
+            worker_name="worker-a",
+            worker_id="worker-a-id",
+            transport=transport,
+        )
+
+        session = client.register_worker()
+        claim = client.claim_job(worker_id=session.worker_id, wait_seconds=10)
+        assert claim is not None
+
+        download_events = []
+        upload_events = []
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source_path = root / "mesh.obj"
+            output_file = root / "out.glb"
+            report_file = root / "report.json"
+            client.download_job_file(
+                claim=claim,
+                destination=source_path,
+                worker_id=session.worker_id,
+                progress_callback=lambda transferred, total: download_events.append((transferred, total)),
+            )
+            output_file.write_bytes(b"binary")
+            report_file.write_text("{}", encoding="utf-8")
+            client.upload_result(
+                worker_id=session.worker_id,
+                claim=claim,
+                optimized_file=output_file,
+                report_file=report_file,
+                summary="HOL.obj: 10 -> 8 (decimate)",
+                progress_callback=lambda transferred, total: upload_events.append((transferred, total)),
+            )
+
+        self.assertTrue(download_events)
+        self.assertTrue(upload_events)
+        self.assertGreaterEqual(download_events[-1][0], 1)
+        self.assertGreaterEqual(upload_events[-1][0], 1)
 
     def test_register_falls_back_to_local_worker_id_when_response_missing_id(self) -> None:
         class NoIdTransport(FakeTransport):

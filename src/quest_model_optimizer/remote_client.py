@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 import mimetypes
 import uuid
+import http.client
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 from urllib import error, parse, request
 
 from .worker_models import JobClaim, WorkerSession
@@ -23,6 +24,9 @@ RUNTIME_KEYS = (
     "download_retries",
     "upload_retries",
 )
+
+
+ProgressCallback = Callable[[int, int | None], None]
 
 
 class ApiRequestError(RuntimeError):
@@ -46,7 +50,13 @@ class TransportProtocol(Protocol):
     ) -> dict[str, Any] | None:
         ...
 
-    def download_file(self, url: str, headers: dict[str, str], destination: Path) -> None:
+    def download_file(
+        self,
+        url: str,
+        headers: dict[str, str],
+        destination: Path,
+        progress_callback: ProgressCallback | None = None,
+    ) -> None:
         ...
 
     def upload_multipart(
@@ -55,6 +65,7 @@ class TransportProtocol(Protocol):
         headers: dict[str, str],
         fields: dict[str, str],
         files: dict[str, Path],
+        progress_callback: ProgressCallback | None = None,
     ) -> dict[str, Any] | None:
         ...
 
@@ -96,16 +107,41 @@ class UrllibTransport:
             body = exc.read().decode("utf-8", errors="replace")
             raise ApiRequestError(status_code=exc.code, method=method, url=url, body=body) from exc
 
-    def download_file(self, url: str, headers: dict[str, str], destination: Path) -> None:
+    @staticmethod
+    def _parse_total_bytes(value: str | None) -> int | None:
+        if value is None:
+            return None
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            return None
+        if parsed <= 0:
+            return None
+        return parsed
+
+    def download_file(
+        self,
+        url: str,
+        headers: dict[str, str],
+        destination: Path,
+        progress_callback: ProgressCallback | None = None,
+    ) -> None:
         req = request.Request(url=url, headers=headers, method="GET")
         destination.parent.mkdir(parents=True, exist_ok=True)
         try:
             with request.urlopen(req, timeout=self.download_timeout) as resp, destination.open("wb") as handle:
+                total_bytes = self._parse_total_bytes(resp.headers.get("Content-Length"))
+                transferred = 0
+                if progress_callback:
+                    progress_callback(0, total_bytes)
                 while True:
                     chunk = resp.read(1024 * 64)
                     if not chunk:
                         break
                     handle.write(chunk)
+                    transferred += len(chunk)
+                    if progress_callback:
+                        progress_callback(transferred, total_bytes)
         except error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
             raise ApiRequestError(status_code=exc.code, method="GET", url=url, body=body) from exc
@@ -116,6 +152,7 @@ class UrllibTransport:
         headers: dict[str, str],
         fields: dict[str, str],
         files: dict[str, Path],
+        progress_callback: ProgressCallback | None = None,
     ) -> dict[str, Any] | None:
         boundary = f"----cmq-{uuid.uuid4().hex}"
         body = bytearray()
@@ -141,18 +178,47 @@ class UrllibTransport:
 
         body.extend(f"--{boundary}--\r\n".encode("utf-8"))
 
-        req_headers = dict(headers)
-        req_headers["Content-Type"] = f"multipart/form-data; boundary={boundary}"
-        req = request.Request(url=url, data=bytes(body), headers=req_headers, method="POST")
+        payload_bytes = bytes(body)
+        total_bytes = len(payload_bytes)
+        if progress_callback:
+            progress_callback(0, total_bytes if total_bytes > 0 else None)
+
+        parsed = parse.urlparse(url)
+        connection_cls = http.client.HTTPSConnection if parsed.scheme == "https" else http.client.HTTPConnection
+        target = parsed.path or "/"
+        if parsed.query:
+            target = f"{target}?{parsed.query}"
+
+        request_headers = dict(headers)
+        request_headers["Content-Type"] = f"multipart/form-data; boundary={boundary}"
+        request_headers["Content-Length"] = str(total_bytes)
+
+        conn = connection_cls(parsed.hostname, parsed.port, timeout=self.upload_timeout)
         try:
-            with request.urlopen(req, timeout=self.upload_timeout) as resp:
-                payload = resp.read()
-                if not payload:
-                    return None
-                return json.loads(payload.decode("utf-8"))
-        except error.HTTPError as exc:
-            body = exc.read().decode("utf-8", errors="replace")
-            raise ApiRequestError(status_code=exc.code, method="POST", url=url, body=body) from exc
+            conn.putrequest("POST", target)
+            for key, value in request_headers.items():
+                conn.putheader(key, value)
+            conn.endheaders()
+
+            sent = 0
+            chunk_size = 1024 * 64
+            while sent < total_bytes:
+                chunk = payload_bytes[sent : sent + chunk_size]
+                conn.send(chunk)
+                sent += len(chunk)
+                if progress_callback:
+                    progress_callback(sent, total_bytes)
+
+            response = conn.getresponse()
+            response_body = response.read()
+            decoded_body = response_body.decode("utf-8", errors="replace")
+            if response.status >= 400:
+                raise ApiRequestError(status_code=response.status, method="POST", url=url, body=decoded_body)
+            if not response_body:
+                return None
+            return json.loads(decoded_body)
+        finally:
+            conn.close()
 
 
 class RemoteWorkerClient:
@@ -419,7 +485,13 @@ class RemoteWorkerClient:
             lease_token=lease_token,
         )
 
-    def download_job_file(self, claim: JobClaim, destination: Path, worker_id: str | None = None) -> Path:
+    def download_job_file(
+        self,
+        claim: JobClaim,
+        destination: Path,
+        worker_id: str | None = None,
+        progress_callback: ProgressCallback | None = None,
+    ) -> Path:
         raw_download_url = claim.download_url or f"/api/v1/jobs/{claim.job_id}/download"
         download_url = self._normalize_url(raw_download_url)
         if self._url_origin(download_url) == self._base_origin():
@@ -437,6 +509,7 @@ class RemoteWorkerClient:
             download_url,
             headers=self._download_headers_for_url(download_url),
             destination=destination,
+            progress_callback=progress_callback,
         )
         return destination
 
@@ -447,6 +520,7 @@ class RemoteWorkerClient:
         optimized_file: Path,
         report_file: Path,
         summary: str,
+        progress_callback: ProgressCallback | None = None,
     ) -> dict[str, Any] | None:
         lease_token = claim.lease_token or self._extract_lease_token(claim.payload)
         if not lease_token:
@@ -511,6 +585,7 @@ class RemoteWorkerClient:
             headers=self._headers(),
             fields=fields,
             files=files,
+            progress_callback=progress_callback,
         )
 
     def report_failure(self, worker_id: str, claim: JobClaim, error_message: str) -> dict[str, Any] | None:
