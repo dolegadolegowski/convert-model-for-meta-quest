@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.31
+
+- Improved Blender decimation stability for hard multi-object scenes by adding an emergency fallback pass when thresholded passes cannot reach face limit.
+- Emergency fallback decimates all meshes (`min_object_faces_for_decimate=0`) only as last resort and records strategy in report.
+- Verified on `27_uklad_nerwowy.obj`: `1982240 -> 253410` faces (`face_limit_met=true`).
+
 ## 0.30
 
 - Fixed worker fail-report contract: `/api/v1/jobs/{id}/fail` now includes `lease_token` (and `claim_token` alias).

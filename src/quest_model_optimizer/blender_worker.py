@@ -303,10 +303,11 @@ def optimize(
     report["faces_before"] = faces_before
     face_map_before = {obj.name: len(obj.data.polygons) for obj in objs}
 
-    decimate = {"applied": False, "passes": []}
+    decimate = {"applied": False, "passes": [], "emergency_mode_used": False, "emergency_pass_count": 0}
 
     if should_decimate(faces_before, face_limit):
         decimate["applied"] = True
+        max_emergency_passes = 3
         ratio_map = compute_object_ratio_map(
             face_counts=face_map_before,
             target_total_faces=int(face_limit * initial_target_safety),
@@ -315,6 +316,7 @@ def optimize(
         )
         pass_info = apply_decimate_pass(objs, ratio_map=ratio_map, pass_index=1)
         faces_after = count_faces(objs)
+        pass_info["strategy"] = "initial_thresholded"
         pass_info["faces_after_pass"] = faces_after
         decimate["passes"].append(pass_info)
 
@@ -339,9 +341,40 @@ def optimize(
                 pass_index=pass_idx,
             )
             faces_after = count_faces(objs)
+            correction_info["strategy"] = "correction_thresholded"
             correction_info["faces_after_pass"] = faces_after
             decimate["passes"].append(correction_info)
             pass_idx += 1
+
+        emergency_passes = 0
+        while faces_after > face_limit and emergency_passes < max_emergency_passes:
+            emergency_ratio = compute_correction_ratio(
+                faces_after,
+                face_limit,
+                safety=0.985,
+            )
+            emergency_face_map = {obj.name: len(obj.data.polygons) for obj in objs}
+            emergency_ratio_map = compute_object_ratio_map(
+                face_counts=emergency_face_map,
+                target_total_faces=int(face_limit * 0.985),
+                min_object_faces_for_decimate=0,
+                safety=emergency_ratio,
+            )
+            emergency_info = apply_decimate_pass(
+                objs,
+                ratio_map=emergency_ratio_map,
+                pass_index=pass_idx,
+            )
+            faces_after = count_faces(objs)
+            emergency_info["strategy"] = "emergency_all_meshes"
+            emergency_info["faces_after_pass"] = faces_after
+            decimate["passes"].append(emergency_info)
+            pass_idx += 1
+            emergency_passes += 1
+
+        if emergency_passes > 0:
+            decimate["emergency_mode_used"] = True
+            decimate["emergency_pass_count"] = emergency_passes
 
     report["decimate"] = decimate
     report["faces_after_decimate"] = count_faces(objs)
@@ -371,6 +404,7 @@ def optimize(
         "max_decimate_passes": max_decimate_passes,
         "initial_target_safety": initial_target_safety,
         "correction_target_safety": correction_target_safety,
+        "emergency_max_passes": 3,
         "cleanup_merge_distance": cleanup_merge_distance,
         "cleanup_degenerate_distance": cleanup_degenerate_distance,
         "min_object_faces_for_decimate": min_object_faces_for_decimate,

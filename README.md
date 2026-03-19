@@ -22,6 +22,7 @@ By default, output files are stored in project-local `output/` instead of next t
   - apply decimate only when needed;
   - compute ratio from actual face count;
   - run correction pass(es) if first pass is not enough.
+  - if thresholded passes still cannot reach limit, run last-resort emergency pass on all meshes.
 - Cleanup pipeline (safe subset of Mesh > Clean Up equivalents):
   - merge-by-distance (`remove_doubles`),
   - dissolve degenerate geometry,
