@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.27
+
+- Simplified worker startup so only `--server-url` and `--token` are required; worker identity is auto-generated.
+- Added server-driven runtime configuration support from `register` and `heartbeat` responses (`runtime_config` + flat legacy fallback).
+- Added live runtime updates for poll wait, heartbeat interval, retries, backoff, and network timeouts without restarting worker.
+- Marked legacy CLI overrides as deprecated fallback options with runtime warning.
+- Added unit tests for auto identity, server runtime config application, heartbeat runtime updates, and minimal CLI startup.
+
 ## 0.26
 
 - Added separate network timeouts for API, download, and upload operations.

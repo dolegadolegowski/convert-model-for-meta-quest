@@ -12,6 +12,18 @@ from urllib import error, parse, request
 
 from .worker_models import JobClaim, WorkerSession
 
+RUNTIME_KEYS = (
+    "poll_wait_seconds",
+    "heartbeat_interval",
+    "reconnect_after_failures",
+    "max_backoff_seconds",
+    "http_timeout_seconds",
+    "download_timeout_seconds",
+    "upload_timeout_seconds",
+    "download_retries",
+    "upload_retries",
+)
+
 
 class ApiRequestError(RuntimeError):
     """Raised when server responds with non-2xx HTTP status."""
@@ -171,14 +183,63 @@ class RemoteWorkerClient:
         self.worker_token = worker_token
         self.worker_name = worker_name
         self.worker_id = worker_id
+        self.http_timeout_seconds = max(1, int(timeout))
+        self.download_timeout_seconds = max(1, int(download_timeout or self.http_timeout_seconds))
+        self.upload_timeout_seconds = max(1, int(upload_timeout or max(self.http_timeout_seconds, 300)))
         self.allow_insecure_http = allow_insecure_http
         self.heartbeat_interval_hint = heartbeat_interval_hint
         self.lease_timeout_hint = lease_timeout_hint
         self.transport: TransportProtocol = transport or UrllibTransport(
-            timeout=timeout,
-            download_timeout=download_timeout,
-            upload_timeout=upload_timeout,
+            timeout=self.http_timeout_seconds,
+            download_timeout=self.download_timeout_seconds,
+            upload_timeout=self.upload_timeout_seconds,
         )
+
+    @staticmethod
+    def _positive_int_or_none(value: Any) -> int | None:
+        if value is None:
+            return None
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            return None
+        if parsed <= 0:
+            return None
+        return parsed
+
+    def _extract_runtime_config(self, response: dict[str, Any] | None) -> dict[str, int]:
+        if not isinstance(response, dict):
+            return {}
+
+        runtime_payload = response.get("runtime_config")
+        runtime_map = runtime_payload if isinstance(runtime_payload, dict) else {}
+        updates: dict[str, int] = {}
+        for key in RUNTIME_KEYS:
+            value = runtime_map.get(key, response.get(key))
+            normalized = self._positive_int_or_none(value)
+            if normalized is not None:
+                updates[key] = normalized
+        return updates
+
+    def apply_runtime_config(self, runtime_config: dict[str, int]) -> None:
+        if not runtime_config:
+            return
+
+        http_timeout = runtime_config.get("http_timeout_seconds")
+        download_timeout = runtime_config.get("download_timeout_seconds")
+        upload_timeout = runtime_config.get("upload_timeout_seconds")
+
+        if http_timeout is not None:
+            self.http_timeout_seconds = max(1, int(http_timeout))
+        if download_timeout is not None:
+            self.download_timeout_seconds = max(1, int(download_timeout))
+        if upload_timeout is not None:
+            self.upload_timeout_seconds = max(1, int(upload_timeout))
+
+        if isinstance(self.transport, UrllibTransport):
+            self.transport.timeout = self.http_timeout_seconds
+            self.transport.download_timeout = self.download_timeout_seconds
+            self.transport.upload_timeout = self.upload_timeout_seconds
 
     def _url(self, path: str) -> str:
         normalized = path if path.startswith("/") else f"/{path}"
@@ -296,17 +357,26 @@ class RemoteWorkerClient:
         worker_id = str(response.get("worker_id") or response.get("id") or self.worker_id or "")
         if not worker_id:
             raise RuntimeError("register response missing worker_id")
-        heartbeat_interval = int(response.get("heartbeat_interval") or 15)
-        return WorkerSession(worker_id=worker_id, heartbeat_interval=heartbeat_interval)
+        runtime_config = self._extract_runtime_config(response)
+        self.apply_runtime_config(runtime_config)
+        heartbeat_interval = int(runtime_config.get("heartbeat_interval") or response.get("heartbeat_interval") or 15)
+        return WorkerSession(
+            worker_id=worker_id,
+            heartbeat_interval=heartbeat_interval,
+            runtime_config=runtime_config or None,
+        )
 
-    def heartbeat(self, worker_id: str) -> None:
+    def heartbeat(self, worker_id: str) -> dict[str, int]:
         payload = {"worker_id": worker_id}
-        self.transport.json_request(
+        response = self.transport.json_request(
             method="POST",
             url=self._url("/api/v1/workers/heartbeat"),
             headers=self._headers(),
             payload=payload,
         )
+        runtime_config = self._extract_runtime_config(response if isinstance(response, dict) else None)
+        self.apply_runtime_config(runtime_config)
+        return runtime_config
 
     def claim_job(self, worker_id: str, wait_seconds: int = 30) -> JobClaim | None:
         url = self._append_query_params(

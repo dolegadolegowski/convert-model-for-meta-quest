@@ -57,6 +57,8 @@ class LoopConfig:
     heartbeat_interval_fallback: int = 15
     max_download_bytes: int = 1024 * 1024 * 1024
     reconnect_after_failures: int = 3
+    download_retries: int = 5
+    upload_retries: int = 5
 
 
 class ExponentialBackoff:
@@ -106,6 +108,27 @@ class WorkerLoop:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.report_dir.mkdir(parents=True, exist_ok=True)
 
+    def _apply_runtime_config(self, runtime_config: dict[str, int], source: str) -> None:
+        if not runtime_config:
+            return
+
+        if "poll_wait_seconds" in runtime_config:
+            self.config.poll_wait_seconds = max(1, int(runtime_config["poll_wait_seconds"]))
+        if "heartbeat_interval" in runtime_config:
+            self._heartbeat_interval = max(5, int(runtime_config["heartbeat_interval"]))
+        if "reconnect_after_failures" in runtime_config:
+            self.config.reconnect_after_failures = max(1, int(runtime_config["reconnect_after_failures"]))
+        if "max_backoff_seconds" in runtime_config:
+            self.config.max_backoff_seconds = max(1, int(runtime_config["max_backoff_seconds"]))
+        if "download_retries" in runtime_config:
+            self.config.download_retries = max(1, int(runtime_config["download_retries"]))
+        if "upload_retries" in runtime_config:
+            self.config.upload_retries = max(1, int(runtime_config["upload_retries"]))
+
+        self.client.apply_runtime_config(runtime_config)
+        ordered = ", ".join(f"{key}={runtime_config[key]}" for key in sorted(runtime_config))
+        self.logger.info("Applied server runtime config from %s: %s", source, ordered)
+
     def run_forever(self) -> int:
         backoff = ExponentialBackoff(max_seconds=self.config.max_backoff_seconds)
 
@@ -145,6 +168,7 @@ class WorkerLoop:
                 self.logger.error("Worker loop error: %s", exc)
                 if self.stop_event.is_set() or self.config.once:
                     return 1
+                backoff.max_seconds = max(1, int(self.config.max_backoff_seconds))
                 time.sleep(delay)
 
         return 0
@@ -156,6 +180,8 @@ class WorkerLoop:
         session = self.client.register_worker()
         self.worker_id = session.worker_id
         self._heartbeat_interval = max(5, int(session.heartbeat_interval or self.config.heartbeat_interval_fallback))
+        if session.runtime_config:
+            self._apply_runtime_config(session.runtime_config, source="register")
         self.logger.info("Registered worker_id=%s", self.worker_id)
         self.observer.set_connection_status(True)
         self._start_heartbeat_thread()
@@ -171,7 +197,9 @@ class WorkerLoop:
         while not self.stop_event.is_set():
             if self.worker_id:
                 try:
-                    self.client.heartbeat(self.worker_id)
+                    heartbeat_runtime = self.client.heartbeat(self.worker_id)
+                    if heartbeat_runtime:
+                        self._apply_runtime_config(heartbeat_runtime, source="heartbeat")
                     self.observer.set_connection_status(True)
                     self.logger.debug("Heartbeat sent for worker_id=%s", self.worker_id)
                 except Exception as exc:
@@ -234,7 +262,7 @@ class WorkerLoop:
                 worker_id=self.worker_id,
             ),
             operation_name="download",
-            attempts=5,
+            attempts=max(1, int(self.config.download_retries)),
         )
 
         download_msg = f"{utc_timestamp()} | Download complete: {download_path.name}"
@@ -299,7 +327,7 @@ class WorkerLoop:
                 summary=summary,
             ),
             operation_name="upload_result",
-            attempts=5,
+            attempts=max(1, int(self.config.upload_retries)),
         )
 
         upload_msg = f"{utc_timestamp()} | Upload status: SUCCESS"

@@ -113,6 +113,87 @@ class RemoteClientTests(unittest.TestCase):
         payload = register_calls[0][3]
         self.assertEqual(payload["worker_id"], "worker-local-123")
 
+    def test_register_parses_runtime_config_from_nested_payload(self) -> None:
+        class RuntimeNestedTransport(FakeTransport):
+            def json_request(self, method, url, headers, payload=None):
+                self.calls.append(("json", method, url, payload))
+                if url.endswith("/api/v1/workers/register"):
+                    return {
+                        "worker_id": "worker-runtime-1",
+                        "runtime_config": {
+                            "poll_wait_seconds": 8,
+                            "heartbeat_interval": 16,
+                            "reconnect_after_failures": 4,
+                            "max_backoff_seconds": 12,
+                            "http_timeout_seconds": 70,
+                            "download_timeout_seconds": 210,
+                            "upload_timeout_seconds": 720,
+                            "download_retries": 2,
+                            "upload_retries": 3,
+                        },
+                    }
+                return super().json_request(method, url, headers, payload)
+
+        client = RemoteWorkerClient(
+            server_url="https://example.org",
+            worker_token="token",
+            worker_name="worker-a",
+            worker_id="worker-a-id",
+            transport=RuntimeNestedTransport(),
+        )
+        session = client.register_worker()
+        assert session.runtime_config is not None
+        self.assertEqual(session.runtime_config.get("poll_wait_seconds"), 8)
+        self.assertEqual(session.runtime_config.get("upload_timeout_seconds"), 720)
+        self.assertEqual(client.http_timeout_seconds, 70)
+        self.assertEqual(client.download_timeout_seconds, 210)
+        self.assertEqual(client.upload_timeout_seconds, 720)
+
+    def test_register_parses_runtime_config_from_flat_legacy_fields(self) -> None:
+        class RuntimeFlatTransport(FakeTransport):
+            def json_request(self, method, url, headers, payload=None):
+                self.calls.append(("json", method, url, payload))
+                if url.endswith("/api/v1/workers/register"):
+                    return {
+                        "worker_id": "worker-runtime-2",
+                        "poll_wait_seconds": 9,
+                        "heartbeat_interval": 18,
+                        "download_retries": 6,
+                    }
+                return super().json_request(method, url, headers, payload)
+
+        client = RemoteWorkerClient(
+            server_url="https://example.org",
+            worker_token="token",
+            worker_name="worker-a",
+            worker_id="worker-a-id",
+            transport=RuntimeFlatTransport(),
+        )
+        session = client.register_worker()
+        assert session.runtime_config is not None
+        self.assertEqual(session.runtime_config.get("poll_wait_seconds"), 9)
+        self.assertEqual(session.runtime_config.get("download_retries"), 6)
+        self.assertEqual(session.heartbeat_interval, 18)
+
+    def test_heartbeat_returns_runtime_config_patch(self) -> None:
+        class HeartbeatRuntimeTransport(FakeTransport):
+            def json_request(self, method, url, headers, payload=None):
+                self.calls.append(("json", method, url, payload))
+                if url.endswith("/api/v1/workers/heartbeat"):
+                    return {"runtime_config": {"poll_wait_seconds": 22, "upload_retries": 7}}
+                return super().json_request(method, url, headers, payload)
+
+        client = RemoteWorkerClient(
+            server_url="https://example.org",
+            worker_token="token",
+            worker_name="worker-a",
+            worker_id="worker-a-id",
+            transport=HeartbeatRuntimeTransport(),
+        )
+        patch = client.heartbeat("worker-a-id")
+        self.assertEqual(patch.get("poll_wait_seconds"), 22)
+        self.assertEqual(patch.get("upload_retries"), 7)
+
     def test_claim_none_on_empty_payload(self) -> None:
         class EmptyClaimTransport(FakeTransport):
             def json_request(self, method, url, headers, payload=None):

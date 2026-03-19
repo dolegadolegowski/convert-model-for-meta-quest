@@ -11,6 +11,7 @@ from typing import Any
 class WorkerSession:
     worker_id: str
     heartbeat_interval: int = 15
+    runtime_config: dict[str, int] | None = None
 
 
 @dataclass

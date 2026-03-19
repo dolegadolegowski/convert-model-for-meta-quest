@@ -99,8 +99,8 @@ Worker configuration via environment variables:
 
 - `SERVER_URL`
 - `WORKER_TOKEN`
-- `WORKER_NAME`
-- `WORKER_ID` (optional override, default `worker-<hostname>`)
+- `WORKER_NAME` (optional legacy override)
+- `WORKER_ID` (optional legacy override)
 
 Security defaults:
 
@@ -108,7 +108,16 @@ Security defaults:
 - For local development only, `http://` can be enabled using `--allow-insecure-http`.
 - Bearer token is attached only for same-origin download endpoints; external signed URLs are fetched without auth header.
 - Downloaded file is validated against optional job checksum (`sha256` / `input_sha256`) and size limit (`--max-download-bytes`).
-- Worker auto-reconnects by re-registering session after repeated failures (configurable with `--reconnect-after-failures`).
+- Worker auto-generates identity (`worker_name` from hostname and `worker_id` as `worker-<hostname>-<short_uuid>`).
+- Worker auto-reconnects by re-registering session after repeated failures.
+
+Minimal worker start (recommended):
+
+```bash
+python3 scripts/run_worker.py \
+  --server-url https://your-server.example \
+  --token YOUR_TOKEN
+```
 
 Run worker with GUI:
 
@@ -116,13 +125,6 @@ Run worker with GUI:
 python3 scripts/run_worker.py \
   --server-url https://your-server.example \
   --token YOUR_TOKEN \
-  --worker-id worker-$(hostname)-$(date +%s) \
-  --worker-name mac-mini-worker-01 \
-  --http-timeout-seconds 60 \
-  --download-timeout-seconds 180 \
-  --upload-timeout-seconds 600 \
-  --reconnect-after-failures 3 \
-  --max-download-bytes 1073741824 \
   --with-gui
 ```
 
@@ -132,27 +134,48 @@ Run worker headless:
 python3 scripts/run_worker.py \
   --server-url https://your-server.example \
   --token YOUR_TOKEN \
-  --worker-id worker-$(hostname)-$(date +%s) \
-  --worker-name mac-mini-worker-01 \
-  --http-timeout-seconds 60 \
-  --download-timeout-seconds 180 \
-  --upload-timeout-seconds 600 \
-  --reconnect-after-failures 3 \
-  --max-download-bytes 1073741824 \
   --no-gui
 ```
 
 Dry-run for local validation:
 
 ```bash
-python3 scripts/run_worker.py --no-gui --dry-run --worker-name local-test
+python3 scripts/run_worker.py --server-url https://your-server.example --token YOUR_TOKEN --no-gui --dry-run
 ```
 
-Legacy CLI compatibility:
+Server-driven runtime config:
+
+After register (and optionally heartbeat), server may return `runtime_config` with:
+
+| key | meaning |
+| --- | --- |
+| `poll_wait_seconds` | long-poll wait for claim |
+| `heartbeat_interval` | heartbeat cadence |
+| `reconnect_after_failures` | failures before forced re-register |
+| `max_backoff_seconds` | retry backoff ceiling |
+| `http_timeout_seconds` | API call timeout (register/claim/heartbeat) |
+| `download_timeout_seconds` | model download timeout |
+| `upload_timeout_seconds` | result upload timeout |
+| `download_retries` | download retry attempts |
+| `upload_retries` | upload retry attempts |
+
+The worker accepts both:
+- `runtime_config` object (preferred),
+- flat top-level legacy keys in register/heartbeat response.
+
+Example runtime-config log line:
+
+```text
+2026-03-19 12:10:20,512 | INFO | Applied server runtime config from register: download_retries=4, poll_wait_seconds=20, upload_timeout_seconds=900
+```
+
+Legacy CLI compatibility (deprecated fallbacks):
 
 - `--gui` is accepted as alias of `--with-gui`.
 - `--claim-wait` is accepted as alias of `--poll-wait`.
-- `--heartbeat-interval` and `--lease-timeout` are accepted and forwarded as register hints.
+- `--worker-id`, `--worker-name`, `--poll-wait`, `--heartbeat-interval`, `--lease-timeout`,
+  `--http-timeout-seconds`, `--download-timeout-seconds`, `--upload-timeout-seconds`,
+  `--reconnect-after-failures` are still accepted as fallback overrides with warning.
 
 GUI window displays:
 
