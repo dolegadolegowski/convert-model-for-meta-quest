@@ -20,6 +20,7 @@ By default, output files are stored in project-local `output/` instead of next t
 - Conditional decimation:
   - skip if `faces <= limit`;
   - apply decimate only when needed;
+  - for over-limit models target a final window of `87.5%-100%` of limit (default: `350000-400000`);
   - compute ratio from actual face count;
   - run correction pass(es) if first pass is not enough.
   - if thresholded passes still cannot reach limit, run last-resort emergency pass on all meshes.

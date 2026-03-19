@@ -57,7 +57,7 @@ def evaluate_checks(report: dict, input_path: Path, output_path: Path, face_limi
         "empty_scene_before_import": int(report.get("import", {}).get("scene_object_count_before_import", -1)) == 0,
         "faces_read": faces_before > 0,
         "decimate_condition": (faces_before > face_limit) == decimate_applied,
-        "face_limit_respected_if_needed": True if faces_before <= face_limit else faces_final < face_limit,
+        "face_limit_respected_if_needed": True if faces_before <= face_limit else faces_final <= face_limit,
         "cleanup_no_crash": int(report.get("cleanup", {}).get("error_count", 1)) == 0,
         "export_succeeds": bool(report.get("export", {}).get("output_exists", False)) and output_path.exists(),
         "output_path_expected": str(output_path).startswith(str(OUTPUT_DIR.resolve())),

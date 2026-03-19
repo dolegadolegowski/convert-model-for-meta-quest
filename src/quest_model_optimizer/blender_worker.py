@@ -19,11 +19,7 @@ SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from quest_model_optimizer.reduction import (  # noqa: E402
-    compute_correction_ratio,
-    compute_object_ratio_map,
-    should_decimate,
-)
+from quest_model_optimizer.reduction import compute_object_ratio_map, should_decimate  # noqa: E402
 
 
 def _set_log_level(level: str) -> None:
@@ -303,11 +299,12 @@ def optimize(
     report["faces_before"] = faces_before
     face_map_before = {obj.name: len(obj.data.polygons) for obj in objs}
 
+    target_window_min_faces = min(face_limit, max(1, int(face_limit * 0.875)))
     decimate = {"applied": False, "passes": [], "emergency_mode_used": False, "emergency_pass_count": 0}
 
     if should_decimate(faces_before, face_limit):
         decimate["applied"] = True
-        max_emergency_passes = 3
+        max_emergency_passes = 8
         ratio_map = compute_object_ratio_map(
             face_counts=face_map_before,
             target_total_faces=int(face_limit * initial_target_safety),
@@ -323,17 +320,12 @@ def optimize(
         max_corrections = max(0, max_decimate_passes - 1)
         pass_idx = 2
         while faces_after > face_limit and pass_idx <= max_corrections + 1:
-            correction_ratio = compute_correction_ratio(
-                faces_after,
-                face_limit,
-                safety=correction_target_safety,
-            )
             correction_face_map = {obj.name: len(obj.data.polygons) for obj in objs}
             correction_ratio_map = compute_object_ratio_map(
                 face_counts=correction_face_map,
-                target_total_faces=int(face_limit * correction_target_safety),
+                target_total_faces=max(target_window_min_faces, int(face_limit * correction_target_safety)),
                 min_object_faces_for_decimate=min_object_faces_for_decimate,
-                safety=correction_ratio,
+                safety=1.0,
             )
             correction_info = apply_decimate_pass(
                 objs,
@@ -348,18 +340,18 @@ def optimize(
 
         emergency_passes = 0
         while faces_after > face_limit and emergency_passes < max_emergency_passes:
-            emergency_ratio = compute_correction_ratio(
-                faces_after,
-                face_limit,
-                safety=0.985,
-            )
             emergency_face_map = {obj.name: len(obj.data.polygons) for obj in objs}
+            emergency_target_faces = max(target_window_min_faces, int(face_limit * 0.99))
             emergency_ratio_map = compute_object_ratio_map(
                 face_counts=emergency_face_map,
-                target_total_faces=int(face_limit * 0.985),
+                target_total_faces=emergency_target_faces,
                 min_object_faces_for_decimate=0,
-                safety=emergency_ratio,
+                safety=1.0,
             )
+            # Keep emergency passes conservative to avoid jumping under target window.
+            min_ratio_for_window = target_window_min_faces / max(1, faces_after)
+            for name, ratio in list(emergency_ratio_map.items()):
+                emergency_ratio_map[name] = min(0.995, max(0.85, min_ratio_for_window, ratio))
             emergency_info = apply_decimate_pass(
                 objs,
                 ratio_map=emergency_ratio_map,
@@ -396,6 +388,10 @@ def optimize(
 
     report["faces_final"] = report["faces_after_cleanup"]
     report["face_limit_met"] = report["faces_final"] <= face_limit
+    report["target_face_window"] = {"min": target_window_min_faces, "max": face_limit}
+    report["face_window_met"] = True
+    if faces_before > face_limit:
+        report["face_window_met"] = target_window_min_faces <= report["faces_final"] <= face_limit
     if decimate.get("applied") and fail_if_over_limit and not report["face_limit_met"]:
         raise RuntimeError(
             f"Final face count {report['faces_final']} still exceeds limit {face_limit}"
@@ -404,7 +400,7 @@ def optimize(
         "max_decimate_passes": max_decimate_passes,
         "initial_target_safety": initial_target_safety,
         "correction_target_safety": correction_target_safety,
-        "emergency_max_passes": 3,
+        "emergency_max_passes": 8,
         "cleanup_merge_distance": cleanup_merge_distance,
         "cleanup_degenerate_distance": cleanup_degenerate_distance,
         "min_object_faces_for_decimate": min_object_faces_for_decimate,

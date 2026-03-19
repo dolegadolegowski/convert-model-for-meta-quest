@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.33
+
+- Updated decimation target behavior for over-limit models to aim for a final face window of `87.5%-100%` of face limit.
+- With default `--face-limit 400000`, optimization now targets `350000-400000` faces.
+- Reworked correction/emergency pass ratio logic to avoid overly aggressive reductions and improve window stability.
+- Added `target_face_window` and `face_window_met` fields in Blender report output.
+
 ## 0.32
 
 - Updated default face limit from `300000` to `400000` across CLI, worker runtime, Blender worker args, and regression runner.
