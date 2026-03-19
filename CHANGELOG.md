@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.30
+
+- Fixed worker fail-report contract: `/api/v1/jobs/{id}/fail` now includes `lease_token` (and `claim_token` alias).
+- Added strict guard for missing lease token in fail-report flow to fail fast with clear message.
+- Added unit tests for fail-report payload (`lease_token`) and missing-lease validation.
+
 ## 0.29
 
 - Added idempotent upload handling: HTTP 409 conflicts indicating server-side `DONE` state are now treated as successful upload completion.

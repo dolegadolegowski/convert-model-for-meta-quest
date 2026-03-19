@@ -609,11 +609,17 @@ class RemoteWorkerClient:
             raise
 
     def report_failure(self, worker_id: str, claim: JobClaim, error_message: str) -> dict[str, Any] | None:
+        lease_token = claim.lease_token or self._extract_lease_token(claim.payload)
+        if not lease_token:
+            raise RuntimeError(f"missing lease_token for report_failure job_id={claim.job_id}")
+
         payload = {
             "worker_id": worker_id,
             "job_id": claim.job_id,
             "error": error_message,
             "input_filename": claim.input_filename,
+            "lease_token": lease_token,
+            "claim_token": lease_token,
         }
         return self.transport.json_request(
             method="POST",

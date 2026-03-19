@@ -394,6 +394,51 @@ class RemoteClientTests(unittest.TestCase):
 
         self.assertEqual(response, {"ok": True, "status": "already-completed"})
 
+    def test_report_failure_sends_lease_token(self) -> None:
+        transport = FakeTransport()
+        client = RemoteWorkerClient(
+            server_url="https://example.org",
+            worker_token="token",
+            worker_name="worker-a",
+            worker_id="worker-a-id",
+            transport=transport,
+        )
+        claim = client.claim_job(worker_id="worker-1", wait_seconds=10)
+        assert claim is not None
+
+        response = client.report_failure(worker_id="worker-1", claim=claim, error_message="processing failed")
+        self.assertEqual(response, {"ok": True})
+
+        fail_calls = [c for c in transport.calls if c[0] == "json" and c[2].endswith("/fail")]
+        self.assertEqual(len(fail_calls), 1)
+        payload = fail_calls[0][3]
+        self.assertEqual(payload.get("lease_token"), "lease-1")
+        self.assertEqual(payload.get("claim_token"), "lease-1")
+
+    def test_report_failure_requires_lease_token(self) -> None:
+        class NoLeaseTransport(FakeTransport):
+            def json_request(self, method, url, headers, payload=None):
+                if "/api/v1/jobs/claim" in url:
+                    return {
+                        "job_id": "job-20",
+                        "input_filename": "mesh.obj",
+                        "download_url": "https://example.org/file",
+                    }
+                return super().json_request(method, url, headers, payload)
+
+        transport = NoLeaseTransport()
+        client = RemoteWorkerClient(
+            server_url="https://example.org",
+            worker_token="token",
+            worker_name="worker-a",
+            worker_id="worker-a-id",
+            transport=transport,
+        )
+        claim = client.claim_job(worker_id="worker-1", wait_seconds=10)
+        assert claim is not None
+        with self.assertRaises(RuntimeError):
+            client.report_failure(worker_id="worker-1", claim=claim, error_message="processing failed")
+
     def test_http_is_rejected_without_override(self) -> None:
         with self.assertRaises(ValueError):
             RemoteWorkerClient(
