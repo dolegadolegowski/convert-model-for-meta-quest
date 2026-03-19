@@ -39,7 +39,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--input", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--report", required=True)
-    parser.add_argument("--face-limit", type=int, default=300000)
+    parser.add_argument("--face-limit", type=int, default=400000)
     parser.add_argument("--log-level", default="INFO")
     parser.add_argument("--max-decimate-passes", type=int, default=4)
     parser.add_argument("--initial-target-safety", type=float, default=0.995)

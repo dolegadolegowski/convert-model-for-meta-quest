@@ -29,7 +29,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="reports",
         help="Directory for JSON execution report",
     )
-    parser.add_argument("--face-limit", type=int, default=300000)
+    parser.add_argument("--face-limit", type=int, default=400000)
     parser.add_argument("--blender-exec", help="Path to Blender executable")
     parser.add_argument("--log-level", default="INFO")
     parser.add_argument(

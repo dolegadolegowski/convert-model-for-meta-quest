@@ -28,7 +28,7 @@ DEFAULT_CASES = [
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run integration regression suite")
     parser.add_argument("--blender-exec", default="/Applications/Blender.app/Contents/MacOS/Blender")
-    parser.add_argument("--face-limit", type=int, default=300000)
+    parser.add_argument("--face-limit", type=int, default=400000)
     parser.add_argument("--blender-timeout-seconds", type=int, default=1800)
     parser.add_argument("--fail-if-over-limit", type=int, choices=[0, 1], default=1)
     parser.add_argument(

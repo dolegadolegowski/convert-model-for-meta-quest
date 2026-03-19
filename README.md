@@ -4,7 +4,7 @@ Python project that runs Blender in background mode to import 3D models, check f
 
 ## Goal
 
-Automate conversion/optimization so that imported models are capped below a configurable face limit (default `300000`) and exported as GLB with reproducible logging and JSON reporting.
+Automate conversion/optimization so that imported models are capped below a configurable face limit (default `400000`) and exported as GLB with reproducible logging and JSON reporting.
 
 ## Why output goes to `output/`
 
@@ -62,7 +62,7 @@ python3 scripts/optimize_model.py \
   --input /absolute/path/model.obj \
   --output-dir output \
   --report-dir reports \
-  --face-limit 300000 \
+  --face-limit 400000 \
   --max-decimate-passes 4 \
   --initial-target-safety 0.995 \
   --correction-target-safety 0.99 \

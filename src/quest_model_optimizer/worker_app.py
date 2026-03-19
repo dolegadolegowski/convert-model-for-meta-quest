@@ -101,7 +101,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dry-run", action="store_true", help="Validate config and exit without network calls")
 
     parser.add_argument("--blender-exec", help="Optional Blender executable path")
-    parser.add_argument("--face-limit", type=int, default=300000)
+    parser.add_argument("--face-limit", type=int, default=400000)
     parser.add_argument("--blender-timeout-seconds", type=int, default=1800)
     parser.add_argument("--log-level", default="INFO")
     parser.add_argument("--version", action="store_true", help="Print worker version and exit")

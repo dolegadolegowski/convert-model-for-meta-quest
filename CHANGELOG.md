@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.32
+
+- Updated default face limit from `300000` to `400000` across CLI, worker runtime, Blender worker args, and regression runner.
+- Updated documentation examples to reflect new default limit (`--face-limit 400000`).
+
 ## 0.31
 
 - Improved Blender decimation stability for hard multi-object scenes by adding an emergency fallback pass when thresholded passes cannot reach face limit.

@@ -12,7 +12,7 @@ from .worker_models import ProcessingOutcome
 
 @dataclass
 class PipelineOptions:
-    face_limit: int = 300000
+    face_limit: int = 400000
     log_level: str = "INFO"
     max_decimate_passes: int = 4
     initial_target_safety: float = 0.995
