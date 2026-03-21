@@ -111,7 +111,8 @@ Security defaults:
 - Bearer token is attached only for same-origin download endpoints; external signed URLs are fetched without auth header.
 - Downloaded file is validated against optional job checksum (`sha256` / `input_sha256`) and size limit (`--max-download-bytes`).
 - Worker auto-generates identity (`worker_name` from hostname and `worker_id` as `worker-<hostname>-<short_uuid>`).
-- Worker auto-reconnects by re-registering session after repeated failures and after transient connectivity loss (for example during server restart).
+- Worker keeps current session during transient outages (timeouts/reset/502/DNS) and re-registers only on explicit session-invalid responses (for example worker not found/expired lease/auth errors).
+- Worker honors HTTP `Retry-After` when provided by server (for overload/backpressure responses).
 
 Minimal worker start (recommended):
 
@@ -170,6 +171,8 @@ Example runtime-config log line:
 ```text
 2026-03-19 12:10:20,512 | INFO | Applied server runtime config from register: download_retries=4, poll_wait_seconds=20, upload_timeout_seconds=900
 ```
+
+Note: runtime-config `INFO` is emitted only when at least one server value changed.
 
 Transfer progress log lines:
 

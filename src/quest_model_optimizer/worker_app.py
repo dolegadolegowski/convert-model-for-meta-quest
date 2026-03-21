@@ -152,7 +152,6 @@ def main(argv: list[str] | None = None) -> int:
     deprecated_flag_values = {
         "--worker-id": args.worker_id,
         "--worker-name": args.worker_name,
-        "--poll-wait/--claim-wait": args.poll_wait,
         "--heartbeat-interval": args.heartbeat_interval,
         "--lease-timeout": args.lease_timeout,
         "--http-timeout-seconds": args.http_timeout_seconds,

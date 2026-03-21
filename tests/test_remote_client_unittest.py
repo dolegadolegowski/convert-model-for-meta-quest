@@ -8,6 +8,7 @@ from pathlib import Path
 from urllib import parse
 
 from quest_model_optimizer.remote_client import ApiRequestError, RemoteWorkerClient
+from quest_model_optimizer.version import read_version
 
 
 class FakeTransport:
@@ -45,6 +46,36 @@ class FakeTransport:
 
 
 class RemoteClientTests(unittest.TestCase):
+    def test_api_request_error_parses_retry_after(self) -> None:
+        exc = ApiRequestError(
+            status_code=503,
+            method="POST",
+            url="https://example.org/api/v1/jobs/claim",
+            body='{"detail":"overloaded"}',
+            headers={"Retry-After": "9"},
+        )
+        self.assertEqual(exc.retry_after_seconds, 9)
+
+        exc_invalid = ApiRequestError(
+            status_code=503,
+            method="POST",
+            url="https://example.org/api/v1/jobs/claim",
+            body='{"detail":"overloaded"}',
+            headers={"Retry-After": "soon"},
+        )
+        self.assertIsNone(exc_invalid.retry_after_seconds)
+
+    def test_user_agent_uses_project_version(self) -> None:
+        client = RemoteWorkerClient(
+            server_url="https://example.org",
+            worker_token="token",
+            worker_name="worker-a",
+            worker_id="worker-a-id",
+            transport=FakeTransport(),
+        )
+        expected = f"ConvertModelForMetaQuest-Worker/{read_version()}"
+        self.assertEqual(client._headers()["User-Agent"], expected)
+
     def test_register_claim_and_upload(self) -> None:
         transport = FakeTransport()
         client = RemoteWorkerClient(

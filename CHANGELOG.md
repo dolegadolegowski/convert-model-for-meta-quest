@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.35
+
+- Hardened worker reconnect strategy: transient network errors (timeouts/reset/502/DNS) no longer force immediate session reset and re-register loops.
+- Added claim/heartbeat coordination so heartbeat is deferred while long-poll claim is in flight, reducing control-plane pressure during outages.
+- Added throttled warning logging for repetitive transient failures to reduce log noise while preserving incident visibility.
+- Added `Retry-After` support from API errors and applied it to worker retry/backoff waits.
+- Upgraded HTTP client error handling with normalized transport exceptions and dynamic `User-Agent` versioning.
+- Added/updated unit tests for retry-after handling, deferred heartbeat behavior, transient reconnect behavior, and API error metadata parsing.
+
 ## 0.34
 
 - Improved auto-reconnect behavior after server restart/network loss.

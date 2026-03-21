@@ -6,11 +6,13 @@ import json
 import mimetypes
 import uuid
 import http.client
+import socket
 from hashlib import sha256
 from pathlib import Path
 from typing import Any, Callable, Protocol
 from urllib import error, parse, request
 
+from .version import read_version
 from .worker_models import JobClaim, WorkerSession
 
 RUNTIME_KEYS = (
@@ -32,12 +34,31 @@ ProgressCallback = Callable[[int, int | None], None]
 class ApiRequestError(RuntimeError):
     """Raised when server responds with non-2xx HTTP status."""
 
-    def __init__(self, status_code: int, method: str, url: str, body: str) -> None:
+    def __init__(
+        self,
+        status_code: int,
+        method: str,
+        url: str,
+        body: str,
+        headers: dict[str, str] | None = None,
+    ) -> None:
         self.status_code = int(status_code)
         self.method = method
         self.url = url
         self.body = body
+        self.headers = {str(k).lower(): str(v) for k, v in (headers or {}).items()}
+        self.retry_after_seconds = self._parse_retry_after(self.headers.get("retry-after"))
         super().__init__(f"HTTP {status_code} for {method} {url}: {body}")
+
+    @staticmethod
+    def _parse_retry_after(value: str | None) -> int | None:
+        if value is None:
+            return None
+        try:
+            parsed = int(str(value).strip())
+        except (TypeError, ValueError):
+            return None
+        return parsed if parsed > 0 else None
 
 
 class TransportProtocol(Protocol):
@@ -105,7 +126,15 @@ class UrllibTransport:
                 return json.loads(body.decode("utf-8"))
         except error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
-            raise ApiRequestError(status_code=exc.code, method=method, url=url, body=body) from exc
+            raise ApiRequestError(
+                status_code=exc.code,
+                method=method,
+                url=url,
+                body=body,
+                headers=dict(exc.headers.items()) if exc.headers else None,
+            ) from exc
+        except (error.URLError, TimeoutError, ConnectionError, OSError, socket.timeout) as exc:
+            raise self._normalize_transport_error(exc) from exc
 
     @staticmethod
     def _parse_total_bytes(value: str | None) -> int | None:
@@ -144,7 +173,33 @@ class UrllibTransport:
                         progress_callback(transferred, total_bytes)
         except error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
-            raise ApiRequestError(status_code=exc.code, method="GET", url=url, body=body) from exc
+            raise ApiRequestError(
+                status_code=exc.code,
+                method="GET",
+                url=url,
+                body=body,
+                headers=dict(exc.headers.items()) if exc.headers else None,
+            ) from exc
+        except (error.URLError, TimeoutError, ConnectionError, OSError, socket.timeout) as exc:
+            raise self._normalize_transport_error(exc) from exc
+
+    @staticmethod
+    def _normalize_transport_error(exc: Exception) -> OSError:
+        if isinstance(exc, OSError):
+            return exc
+        if isinstance(exc, error.URLError):
+            reason = getattr(exc, "reason", None)
+            if isinstance(reason, OSError):
+                return reason
+            if isinstance(reason, socket.timeout):
+                return OSError(60, str(reason))
+            if reason is not None:
+                errno = getattr(reason, "errno", 0) or 0
+                return OSError(errno, str(reason))
+            return OSError(0, str(exc))
+        if isinstance(exc, TimeoutError):
+            return OSError(60, str(exc))
+        return OSError(0, str(exc))
 
     def upload_multipart(
         self,
@@ -213,10 +268,20 @@ class UrllibTransport:
             response_body = response.read()
             decoded_body = response_body.decode("utf-8", errors="replace")
             if response.status >= 400:
-                raise ApiRequestError(status_code=response.status, method="POST", url=url, body=decoded_body)
+                raise ApiRequestError(
+                    status_code=response.status,
+                    method="POST",
+                    url=url,
+                    body=decoded_body,
+                    headers=dict(response.getheaders()),
+                )
             if not response_body:
                 return None
             return json.loads(decoded_body)
+        except ApiRequestError:
+            raise
+        except (error.URLError, TimeoutError, ConnectionError, OSError, socket.timeout, http.client.HTTPException) as exc:
+            raise self._normalize_transport_error(exc) from exc
         finally:
             conn.close()
 
@@ -255,6 +320,7 @@ class RemoteWorkerClient:
         self.allow_insecure_http = allow_insecure_http
         self.heartbeat_interval_hint = heartbeat_interval_hint
         self.lease_timeout_hint = lease_timeout_hint
+        self.user_agent = f"ConvertModelForMetaQuest-Worker/{read_version()}"
         self.transport: TransportProtocol = transport or UrllibTransport(
             timeout=self.http_timeout_seconds,
             download_timeout=self.download_timeout_seconds,
@@ -315,7 +381,7 @@ class RemoteWorkerClient:
         return {
             "Authorization": f"Bearer {self.worker_token}",
             "Accept": "application/json",
-            "User-Agent": "ConvertModelForMetaQuest-Worker/0.11",
+            "User-Agent": self.user_agent,
         }
 
     def _base_origin(self) -> str:
@@ -412,7 +478,7 @@ class RemoteWorkerClient:
         same_origin = self._url_origin(download_url) == self._base_origin()
         headers = {
             "Accept": "application/octet-stream",
-            "User-Agent": "ConvertModelForMetaQuest-Worker/0.11",
+            "User-Agent": self.user_agent,
         }
         if same_origin:
             headers["Authorization"] = f"Bearer {self.worker_token}"

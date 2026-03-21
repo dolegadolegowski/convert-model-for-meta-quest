@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import logging
+import random
 import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Protocol
+from urllib import parse
 
 from .remote_client import ApiRequestError, RemoteWorkerClient
 from .worker_models import JobClaim
@@ -59,6 +61,7 @@ class LoopConfig:
     reconnect_after_failures: int = 3
     download_retries: int = 5
     upload_retries: int = 5
+    transient_log_window_seconds: int = 30
 
 
 class ExponentialBackoff:
@@ -102,6 +105,9 @@ class WorkerLoop:
         self._consecutive_failures = 0
         self._heartbeat_consecutive_failures = 0
         self._heartbeat_missing_config_logged = False
+        self._claim_inflight = False
+        self._runtime_config_snapshot: dict[str, int] = {}
+        self._throttled_warnings: dict[str, tuple[float, int]] = {}
 
         self.download_dir = self.work_root / "downloads"
         self.output_dir = self.work_root / "output"
@@ -173,6 +179,7 @@ class WorkerLoop:
         if not runtime_config:
             return
 
+        normalized = {str(key): int(value) for key, value in runtime_config.items()}
         if "poll_wait_seconds" in runtime_config:
             self.config.poll_wait_seconds = max(1, int(runtime_config["poll_wait_seconds"]))
         if "heartbeat_interval" in runtime_config:
@@ -187,8 +194,14 @@ class WorkerLoop:
             self.config.upload_retries = max(1, int(runtime_config["upload_retries"]))
 
         self.client.apply_runtime_config(runtime_config)
-        if log_applied:
-            ordered = ", ".join(f"{key}={runtime_config[key]}" for key in sorted(runtime_config))
+        changed_values = {
+            key: value
+            for key, value in normalized.items()
+            if self._runtime_config_snapshot.get(key) != value
+        }
+        self._runtime_config_snapshot.update(normalized)
+        if log_applied and changed_values:
+            ordered = ", ".join(f"{key}={changed_values[key]}" for key in sorted(changed_values))
             self.logger.info("Applied server runtime config from %s: %s", source, ordered)
 
     def run_forever(self) -> int:
@@ -198,10 +211,14 @@ class WorkerLoop:
             try:
                 if not self.worker_id:
                     self._register_worker()
-                claim = self.client.claim_job(
-                    worker_id=self.worker_id,
-                    wait_seconds=self.config.poll_wait_seconds,
-                )
+                self._claim_inflight = True
+                try:
+                    claim = self.client.claim_job(
+                        worker_id=self.worker_id,
+                        wait_seconds=self.config.poll_wait_seconds,
+                    )
+                finally:
+                    self._claim_inflight = False
                 self.observer.set_connection_status(True)
                 backoff.reset()
                 self._consecutive_failures = 0
@@ -217,24 +234,38 @@ class WorkerLoop:
             except Exception as exc:
                 self.observer.set_connection_status(False)
                 self._consecutive_failures += 1
-                if self._should_reconnect(exc) or self._is_transient_network_error(exc):
+                transient_error = self._is_transient_network_error(exc)
+                if self._should_reconnect(exc):
                     self._reset_worker_session(reason=f"server/session connectivity error: {exc}")
                 elif (
                     self.worker_id
+                    and not transient_error
                     and self._consecutive_failures >= max(1, int(self.config.reconnect_after_failures))
                 ):
+                    reason = (
+                        f"transient connectivity failures reached {self._consecutive_failures}"
+                        if transient_error
+                        else f"consecutive failures reached {self._consecutive_failures}"
+                    )
                     self._reset_worker_session(
-                        reason=f"consecutive failures reached {self._consecutive_failures}"
+                        reason=reason
                     )
                 delay = backoff.next_delay()
-                if self._is_transient_network_error(exc):
-                    self.logger.warning("Transient worker loop network error: %s", exc)
+                retry_after_seconds = self._retry_after_seconds(exc)
+                if retry_after_seconds is not None:
+                    delay = max(delay, retry_after_seconds)
+                if transient_error:
+                    self._log_throttled_warning(
+                        key=f"loop:{self._error_signature(exc)}",
+                        message=f"Transient worker loop network error: {exc}",
+                    )
                 else:
                     self.logger.error("Worker loop error: %s", exc)
                 if self.stop_event.is_set() or self.config.once:
                     return 1
                 backoff.max_seconds = max(1, int(self.config.max_backoff_seconds))
-                time.sleep(delay)
+                jittered_delay = max(0.1, delay * random.uniform(0.9, 1.1))
+                time.sleep(jittered_delay)
 
         return 0
 
@@ -262,6 +293,9 @@ class WorkerLoop:
     def _heartbeat_loop(self) -> None:
         while not self.stop_event.is_set():
             if self.worker_id:
+                if self._claim_inflight and self.current_job_id is None:
+                    time.sleep(self._heartbeat_interval)
+                    continue
                 try:
                     heartbeat_runtime = self.client.heartbeat(self.worker_id)
                     if heartbeat_runtime:
@@ -277,15 +311,17 @@ class WorkerLoop:
                     self.logger.debug("Heartbeat sent for worker_id=%s", self.worker_id)
                 except Exception as exc:
                     self.observer.set_connection_status(False)
-                    self.logger.warning("Heartbeat failed: %s", exc)
+                    if self._is_transient_network_error(exc):
+                        self._log_throttled_warning(
+                            key=f"heartbeat:{self._error_signature(exc)}",
+                            message=f"Heartbeat failed: {exc}",
+                        )
+                    else:
+                        self.logger.warning("Heartbeat failed: %s", exc)
                     self._heartbeat_missing_config_logged = False
                     self._heartbeat_consecutive_failures += 1
                     if self._should_reconnect(exc):
                         self._reset_worker_session(reason=f"heartbeat rejected: {exc}")
-                    elif self._is_transient_network_error(exc) and self._heartbeat_consecutive_failures >= max(
-                        1, int(self.config.reconnect_after_failures)
-                    ):
-                        self._reset_worker_session(reason=f"heartbeat connectivity lost: {exc}")
             time.sleep(self._heartbeat_interval)
 
     def _reset_worker_session(self, reason: str) -> None:
@@ -312,7 +348,7 @@ class WorkerLoop:
         if isinstance(exc, ApiRequestError):
             return exc.status_code in {408, 425, 429, 500, 502, 503, 504}
 
-        if isinstance(exc, OSError) and exc.errno in {32, 54, 60, 104, 110}:
+        if isinstance(exc, OSError) and exc.errno in {8, 32, 54, 60, 104, 110}:
             return True
 
         error_text = str(exc).lower()
@@ -325,8 +361,39 @@ class WorkerLoop:
             "connection aborted",
             "connection refused",
             "network is unreachable",
+            "nodename nor servname provided",
+            "name or service not known",
+            "temporary failure in name resolution",
         )
         return any(token in error_text for token in transient_tokens)
+
+    @staticmethod
+    def _error_signature(exc: Exception) -> str:
+        if isinstance(exc, ApiRequestError):
+            path = parse.urlparse(exc.url).path or exc.url
+            return f"api:{exc.status_code}:{exc.method}:{path}"
+        if isinstance(exc, OSError):
+            return f"oserror:{exc.errno}:{type(exc).__name__}"
+        return f"{type(exc).__name__}:{str(exc).lower().split(':')[0][:80]}"
+
+    @staticmethod
+    def _retry_after_seconds(exc: Exception) -> int | None:
+        if isinstance(exc, ApiRequestError):
+            return exc.retry_after_seconds
+        return None
+
+    def _log_throttled_warning(self, key: str, message: str) -> None:
+        window = max(1, int(self.config.transient_log_window_seconds))
+        now = time.monotonic()
+        last_logged_at, suppressed_count = self._throttled_warnings.get(key, (0.0, 0))
+        if last_logged_at <= 0 or now - last_logged_at >= window:
+            if suppressed_count > 0:
+                self.logger.warning("%s (suppressed %s similar events)", message, suppressed_count)
+            else:
+                self.logger.warning(message)
+            self._throttled_warnings[key] = (now, 0)
+            return
+        self._throttled_warnings[key] = (last_logged_at, suppressed_count + 1)
 
     def _retry(self, fn, operation_name: str, attempts: int = 5):
         backoff = ExponentialBackoff(max_seconds=self.config.max_backoff_seconds)
@@ -343,6 +410,9 @@ class WorkerLoop:
                 if self._is_transient_network_error(exc):
                     effective_attempts = max(effective_attempts, 4)
                 delay = backoff.next_delay()
+                retry_after_seconds = self._retry_after_seconds(exc)
+                if retry_after_seconds is not None:
+                    delay = max(delay, retry_after_seconds)
                 self.logger.warning(
                     "%s failed (attempt %s/%s): %s",
                     operation_name,

@@ -257,7 +257,7 @@ class WorkerLoopTests(unittest.TestCase):
         self.assertGreaterEqual(client.register_calls, 2)
         self.assertEqual(client.upload_calls, 1)
 
-    def test_reconnects_by_reregistering_after_transient_claim_disconnect(self) -> None:
+    def test_transient_claim_disconnects_do_not_force_immediate_reregister(self) -> None:
         class TransientReconnectClient(FakeClient):
             def __init__(self) -> None:
                 super().__init__()
@@ -270,9 +270,9 @@ class WorkerLoopTests(unittest.TestCase):
 
             def claim_job(self, worker_id: str, wait_seconds: int = 30):
                 self.claim_count += 1
-                if self.claim_count == 1:
+                if self.claim_count <= 3:
                     raise OSError(54, "Connection reset by peer")
-                if self.claim_count == 2:
+                if self.claim_count == 4:
                     return JobClaim(
                         job_id="job-transient-1",
                         input_filename="HOL.obj",
@@ -311,8 +311,52 @@ class WorkerLoopTests(unittest.TestCase):
                 rc = loop.run_forever()
 
         self.assertEqual(rc, 0)
-        self.assertGreaterEqual(client.register_calls, 2)
+        self.assertEqual(client.register_calls, 1)
         self.assertEqual(client.upload_calls, 1)
+
+    def test_single_transient_claim_error_does_not_immediately_reregister(self) -> None:
+        class SingleTransientClient(FakeClient):
+            def __init__(self) -> None:
+                super().__init__()
+                self.register_calls = 0
+                self.loop_ref = None
+
+            def register_worker(self) -> WorkerSession:
+                self.register_calls += 1
+                return WorkerSession(worker_id="worker-stable-1", heartbeat_interval=60)
+
+            def claim_job(self, worker_id: str, wait_seconds: int = 30):
+                self.claim_count += 1
+                if self.claim_count == 1:
+                    raise OSError(54, "Connection reset by peer")
+                if self.loop_ref is not None:
+                    self.loop_ref.stop_event.set()
+                return None
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            observer = Observer()
+            client = SingleTransientClient()
+            loop = WorkerLoop(
+                client=client,
+                processor=SuccessProcessor(),
+                work_root=Path(temp_dir),
+                logger=logging.getLogger("worker-loop-transient-no-reregister"),
+                observer=observer,
+                config=LoopConfig(once=False, reconnect_after_failures=3, poll_wait_seconds=1),
+            )
+            client.loop_ref = loop
+            with mock.patch("quest_model_optimizer.worker_loop.time.sleep", return_value=None):
+                rc = loop.run_forever()
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(client.register_calls, 1)
+
+    def test_dns_error_is_classified_as_transient(self) -> None:
+        self.assertTrue(
+            WorkerLoop._is_transient_network_error(
+                OSError(8, "nodename nor servname provided, or not known")
+            )
+        )
 
     def test_register_runtime_config_overrides_loop_defaults(self) -> None:
         class RuntimeConfigClient(FakeClient):
@@ -424,6 +468,39 @@ class WorkerLoopTests(unittest.TestCase):
         self.assertEqual(loop.config.download_retries, 6)
         self.assertTrue(client.runtime_updates)
 
+    def test_heartbeat_is_deferred_while_claim_is_inflight(self) -> None:
+        class HeartbeatSkipClient(FakeClient):
+            def __init__(self) -> None:
+                super().__init__()
+                self.heartbeat_calls = 0
+
+            def heartbeat(self, worker_id: str):
+                self.heartbeat_calls += 1
+                return {}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            observer = Observer()
+            client = HeartbeatSkipClient()
+            loop = WorkerLoop(
+                client=client,
+                processor=SuccessProcessor(),
+                work_root=Path(temp_dir),
+                logger=logging.getLogger("worker-loop-heartbeat-skip"),
+                observer=observer,
+                config=LoopConfig(once=False, heartbeat_interval_fallback=1),
+            )
+            loop.worker_id = "worker-heartbeat-skip-1"
+            loop._claim_inflight = True
+            loop.current_job_id = None
+
+            def sleep_and_stop(_delay: float) -> None:
+                loop.stop_event.set()
+
+            with mock.patch("quest_model_optimizer.worker_loop.time.sleep", side_effect=sleep_and_stop):
+                loop._heartbeat_loop()
+
+        self.assertEqual(client.heartbeat_calls, 0)
+
     def test_retry_extends_attempts_for_transient_network_errors(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             loop = WorkerLoop(
@@ -448,6 +525,43 @@ class WorkerLoopTests(unittest.TestCase):
 
         self.assertEqual(result, "ok")
         self.assertEqual(attempts["count"], 4)
+
+    def test_retry_honors_retry_after_header(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            loop = WorkerLoop(
+                client=FakeClient(),
+                processor=SuccessProcessor(),
+                work_root=Path(temp_dir),
+                logger=logging.getLogger("worker-loop-retry-after"),
+                observer=Observer(),
+                config=LoopConfig(once=True),
+            )
+
+            attempts = {"count": 0}
+            sleep_values: list[float] = []
+
+            def operation_with_retry_after():
+                attempts["count"] += 1
+                if attempts["count"] == 1:
+                    raise ApiRequestError(
+                        status_code=503,
+                        method="POST",
+                        url="https://example.org/api/v1/jobs/claim",
+                        body='{"detail":"overloaded"}',
+                        headers={"Retry-After": "7"},
+                    )
+                return "ok"
+
+            with mock.patch(
+                "quest_model_optimizer.worker_loop.time.sleep",
+                side_effect=lambda delay: sleep_values.append(float(delay)),
+            ):
+                result = loop._retry(operation_with_retry_after, operation_name="claim", attempts=1)
+
+        self.assertEqual(result, "ok")
+        self.assertEqual(attempts["count"], 2)
+        self.assertTrue(sleep_values)
+        self.assertGreaterEqual(sleep_values[0], 7.0)
 
 
 if __name__ == "__main__":
