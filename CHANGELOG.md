@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.36
+
+- Added standalone desktop worker launcher: python3 scripts/worker_desktop_app.py (no required CLI params).
+- Desktop app allows entering server URL/token in GUI, stores settings via QSettings, and stores token via keyring when available.
+- Added tray workflow with Reconnect, Logs, and Quit, plus status colors (green connected, orange processing, red disconnected).
+- Added package entrypoint convert-model-worker-desktop.
+
 ## 0.35
 
 - Hardened worker reconnect strategy: transient network errors (timeouts/reset/502/DNS) no longer force immediate session reset and re-register loops.

@@ -246,3 +246,13 @@ Default test cases:
 
 - Current version is stored in `VERSION`.
 - Changes are recorded in `CHANGELOG.md`.
+
+## Desktop Worker Launcher (no required args)
+Use the single-file desktop launcher:
+
+```bash
+python3 scripts/worker_desktop_app.py
+```
+
+After launch, enter server URL and worker token in the app window (or reuse saved values from previous run), then click `Connect`.
+Settings are persisted with `QSettings` and tray menu exposes `Reconnect`, `Logs`, and `Quit`.
