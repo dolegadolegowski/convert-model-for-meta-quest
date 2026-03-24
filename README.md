@@ -247,6 +247,16 @@ Default test cases:
 - Current version is stored in `VERSION`.
 - Changes are recorded in `CHANGELOG.md`.
 
+## Double-click Single-file Launcher (macOS)
+If you want one-file launch from Finder, use:
+
+```bash
+./Run Worker.command
+```
+
+You can also double-click `Run Worker.command` in Finder.
+On first run it creates `.venv` if missing, installs `PySide6` + `keyring` when needed, and starts the worker UI.
+
 ## Desktop Worker Launcher (no required args)
 Use the single-file desktop launcher:
 
