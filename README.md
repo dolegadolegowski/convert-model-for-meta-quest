@@ -264,8 +264,12 @@ Use the single-file desktop launcher:
 python3 scripts/worker_desktop_app.py
 ```
 
-After launch, enter server URL and worker token in the app window (or reuse saved values from previous run), then click `Connect`.
-Settings are persisted with `QSettings` and tray menu exposes `Reconnect`, `Logs`, and `Quit`.
+After launch, use the `Connection Code` tab and paste the encrypted code generated in server admin panel.
+When code is valid, `Connect` becomes active; after connection the same button switches to `Disconnect`.
+
+Manual entry is still available in the `Manual Config` tab (server URL, token, worker name, poll wait, download limit, work dir).
+Both code-based and manual settings are persisted with `QSettings` and reused on next launch.
+Tray menu exposes `Reconnect`, `Logs`, and `Quit`.
 
 ## Packaging ZIP for another computer
 

@@ -1,0 +1,60 @@
+from __future__ import annotations
+
+import unittest
+from pathlib import Path
+
+from quest_model_optimizer.connection_code import (
+    ConnectionCodeError,
+    connect_button_state,
+    decode_connection_code,
+    encode_connection_code,
+)
+
+
+class ConnectionCodeTests(unittest.TestCase):
+    def test_valid_code_roundtrip(self) -> None:
+        payload = {
+            "server_url": "https://medical.example.com",
+            "worker_token": "token-123",
+            "worker_name": "Local Worker",
+            "runtime_config": {"poll_wait_seconds": 30},
+        }
+        code = encode_connection_code(payload)
+        decoded = decode_connection_code(code)
+        self.assertEqual(decoded["server_url"], payload["server_url"])
+        self.assertEqual(decoded["worker_token"], payload["worker_token"])
+        self.assertEqual(decoded["worker_name"], payload["worker_name"])
+
+    def test_invalid_code_missing_required_field(self) -> None:
+        payload = {
+            "server_url": "https://medical.example.com",
+            "worker_token": "token-123",
+        }
+        code = encode_connection_code(payload)
+        with self.assertRaises(ConnectionCodeError):
+            decode_connection_code(code)
+
+    def test_connect_button_state_transitions(self) -> None:
+        enabled, label = connect_button_state(connected=False, config_valid=False)
+        self.assertFalse(enabled)
+        self.assertEqual(label, "Connect")
+
+        enabled, label = connect_button_state(connected=False, config_valid=True)
+        self.assertTrue(enabled)
+        self.assertEqual(label, "Connect")
+
+        enabled, label = connect_button_state(connected=True, config_valid=False)
+        self.assertTrue(enabled)
+        self.assertEqual(label, "Disconnect")
+
+    def test_desktop_worker_includes_code_and_manual_config_flow(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        content = (root / "src" / "quest_model_optimizer" / "desktop_worker.py").read_text(encoding="utf-8")
+        self.assertIn("Connection Code", content)
+        self.assertIn("Manual Config", content)
+        self.assertIn("connection_code", content)
+        self.assertIn("self.connect_btn.setText(label)", content)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

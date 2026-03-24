@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.42
+
+- Added encrypted connection-code flow in desktop worker:
+  - new `Connection Code` tab with paste box,
+  - automatic code decode and validation in background,
+  - `Connect` is enabled only when code is valid and required fields are present.
+- Added `Manual Config` tab for classic field-by-field setup (server URL/token/worker name/poll/download/work dir).
+- Connect button now toggles runtime action:
+  - `Connect` before startup,
+  - `Disconnect` while worker loop is running.
+- Added persistent settings for both modes:
+  - pasted connection code is remembered,
+  - decoded/manual values are stored and reused on next start.
+- Added `quest_model_optimizer/connection_code.py` with shared contract decoder and button-state helper.
+- Added tests for:
+  - valid/invalid code parsing,
+  - connect/disconnect button state transitions,
+  - presence of Connection Code + Manual Config flow in desktop worker UI source.
+
 ## 0.41
 
 - Fixed Finder launcher shutdown flow:

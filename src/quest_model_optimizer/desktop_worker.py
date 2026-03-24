@@ -18,6 +18,7 @@ import uuid
 from typing import Callable
 from urllib.parse import urlsplit
 
+from .connection_code import ConnectionCodeError, connect_button_state, decode_connection_code
 from .logging_utils import configure_logging
 from .remote_client import RemoteWorkerClient
 from .runner import detect_blender_executable
@@ -309,6 +310,7 @@ def run_desktop(args: argparse.Namespace) -> int:
             QPushButton,
             QSpinBox,
             QSystemTrayIcon,
+            QTabWidget,
             QVBoxLayout,
             QWidget,
         )
@@ -520,26 +522,54 @@ def run_desktop(args: argparse.Namespace) -> int:
             status_row.addStretch(1)
             layout.addLayout(status_row)
 
+            self.config_tabs = QTabWidget()
+
+            code_tab = QWidget()
+            code_layout = QVBoxLayout(code_tab)
+            code_layout.setContentsMargins(8, 8, 8, 8)
+            code_layout.setSpacing(8)
+            code_layout.addWidget(QLabel("Paste encrypted worker connection code from the server admin panel:"))
+            self.connection_code_input = QPlainTextEdit()
+            self.connection_code_input.setPlaceholderText("Paste encrypted connection code here...")
+            self.connection_code_input.setMaximumHeight(120)
+            self.connection_code_input.textChanged.connect(self._schedule_decode_connection_code)
+            code_layout.addWidget(self.connection_code_input)
+            self.connection_code_status = QLabel("Waiting for connection code.")
+            code_layout.addWidget(self.connection_code_status)
+            code_layout.addStretch(1)
+            self.config_tabs.addTab(code_tab, "Connection Code")
+
+            manual_tab = QWidget()
+            manual_layout = QVBoxLayout(manual_tab)
+            manual_layout.setContentsMargins(8, 8, 8, 8)
+            manual_layout.setSpacing(8)
+
             form = QFormLayout()
             self.server_input = QLineEdit()
             self.server_input.setPlaceholderText("https://your-server")
             self.server_input.editingFinished.connect(self._reload_token_for_server)
+            self.server_input.textChanged.connect(self._refresh_connect_button_state)
 
             self.token_input = QLineEdit()
             self.token_input.setEchoMode(QLineEdit.Password)
             self.token_input.setPlaceholderText("Worker token")
+            self.token_input.textChanged.connect(self._refresh_connect_button_state)
 
             self.worker_name_input = QLineEdit()
+            self.worker_name_input.textChanged.connect(self._refresh_connect_button_state)
 
             self.poll_wait_input = QSpinBox()
             self.poll_wait_input.setRange(1, 120)
+            self.poll_wait_input.valueChanged.connect(self._refresh_connect_button_state)
 
             self.max_download_input = QSpinBox()
             self.max_download_input.setRange(1, 10 * 1024)
             self.max_download_input.setSuffix(" MB")
+            self.max_download_input.valueChanged.connect(self._refresh_connect_button_state)
 
             self.work_dir_input = QLineEdit()
             self.work_dir_input.setPlaceholderText("worker_runtime")
+            self.work_dir_input.textChanged.connect(self._refresh_connect_button_state)
 
             form.addRow("Server URL", self.server_input)
             form.addRow("Token", self.token_input)
@@ -547,24 +577,28 @@ def run_desktop(args: argparse.Namespace) -> int:
             form.addRow("Poll wait", self.poll_wait_input)
             form.addRow("Max download", self.max_download_input)
             form.addRow("Work dir", self.work_dir_input)
-            layout.addLayout(form)
+            manual_layout.addLayout(form)
+            manual_layout.addStretch(1)
+            self.config_tabs.addTab(manual_tab, "Manual Config")
+            self.config_tabs.currentChanged.connect(self._refresh_connect_button_state)
+            layout.addWidget(self.config_tabs)
 
             buttons = QHBoxLayout()
             self.connect_btn = QPushButton("Connect")
-            self.reconnect_btn = QPushButton("Reconnect")
-            self.disconnect_btn = QPushButton("Disconnect")
-            self.connect_btn.clicked.connect(self._connect_clicked)
-            self.reconnect_btn.clicked.connect(self._reconnect_clicked)
-            self.disconnect_btn.clicked.connect(self._disconnect)
+            self.connect_btn.clicked.connect(self._toggle_connection_clicked)
             buttons.addWidget(self.connect_btn)
-            buttons.addWidget(self.reconnect_btn)
-            buttons.addWidget(self.disconnect_btn)
             buttons.addStretch(1)
             layout.addLayout(buttons)
 
             self.logs = QPlainTextEdit()
             self.logs.setReadOnly(True)
             layout.addWidget(self.logs, 1)
+
+            self._decoded_connection_payload: dict[str, object] | None = None
+            self._code_decode_timer = QTimer(self)
+            self._code_decode_timer.setSingleShot(True)
+            self._code_decode_timer.timeout.connect(self._decode_connection_code_now)
+            self._refresh_connect_button_state()
 
         def _build_icon(self, color_hex: str) -> QIcon:
             pix = QPixmap(24, 24)
@@ -613,6 +647,7 @@ def run_desktop(args: argparse.Namespace) -> int:
             poll_wait = int(self._settings.value("poll_wait", defaults.poll_wait) or defaults.poll_wait)
             max_download_bytes = int(self._settings.value("max_download_bytes", defaults.max_download_bytes) or defaults.max_download_bytes)
             work_dir = str(self._settings.value("work_dir", defaults.work_dir) or defaults.work_dir).strip() or "worker_runtime"
+            connection_code = str(self._settings.value("connection_code", "") or "").strip()
 
             if defaults.server_url:
                 server_url = defaults.server_url
@@ -627,8 +662,15 @@ def run_desktop(args: argparse.Namespace) -> int:
             self.poll_wait_input.setValue(max(1, min(120, poll_wait)))
             self.max_download_input.setValue(max(1, min(10240, max_download_bytes // (1024 * 1024))))
             self.work_dir_input.setText(work_dir)
+            self.connection_code_input.setPlainText(connection_code)
 
             self._worker_id = worker_id or _auto_worker_id(worker_name)
+            if connection_code:
+                self.config_tabs.setCurrentIndex(0)
+            else:
+                self.config_tabs.setCurrentIndex(1)
+            self._decode_connection_code_now()
+            self._refresh_connect_button_state()
 
         def _persist_settings(self) -> None:
             server_url = self.server_input.text().strip()
@@ -638,6 +680,7 @@ def run_desktop(args: argparse.Namespace) -> int:
             self._settings.setValue("poll_wait", int(self.poll_wait_input.value()))
             self._settings.setValue("max_download_bytes", int(self.max_download_input.value()) * 1024 * 1024)
             self._settings.setValue("work_dir", self.work_dir_input.text().strip() or "worker_runtime")
+            self._settings.setValue("connection_code", self.connection_code_input.toPlainText().strip())
             self._vault.save(server_url, self.token_input.text().strip())
 
         def _reload_token_for_server(self) -> None:
@@ -647,6 +690,71 @@ def run_desktop(args: argparse.Namespace) -> int:
             token = self._vault.load(server_url)
             if token:
                 self.token_input.setText(token)
+
+        def _schedule_decode_connection_code(self) -> None:
+            self.connection_code_status.setText("Decoding connection code...")
+            self._code_decode_timer.start(140)
+
+        def _decode_connection_code_now(self) -> None:
+            code = self.connection_code_input.toPlainText().strip()
+            if not code:
+                self._decoded_connection_payload = None
+                self.connection_code_status.setText("Waiting for connection code.")
+                self._refresh_connect_button_state()
+                return
+            try:
+                payload = decode_connection_code(code)
+            except ConnectionCodeError as exc:
+                self._decoded_connection_payload = None
+                self.connection_code_status.setText(f"Invalid code: {exc}")
+                self._refresh_connect_button_state()
+                return
+            self._decoded_connection_payload = payload
+            self.connection_code_status.setText("Connection code valid. Connect is ready.")
+            self._apply_decoded_payload_to_manual(payload)
+            self._refresh_connect_button_state()
+
+        def _apply_decoded_payload_to_manual(self, payload: dict[str, object]) -> None:
+            server_url = str(payload.get("server_url", "") or "").strip()
+            worker_token = str(payload.get("worker_token", "") or "").strip()
+            worker_name = str(payload.get("worker_name", "") or "").strip() or "Local Worker"
+            runtime_config = payload.get("runtime_config")
+            runtime_map = runtime_config if isinstance(runtime_config, dict) else {}
+            poll_wait = runtime_map.get("poll_wait_seconds")
+            if server_url:
+                self.server_input.setText(server_url)
+            if worker_token:
+                self.token_input.setText(worker_token)
+            if worker_name:
+                self.worker_name_input.setText(worker_name)
+            if isinstance(poll_wait, int):
+                self.poll_wait_input.setValue(max(1, min(120, int(poll_wait))))
+            if server_url and worker_token:
+                self._vault.save(server_url, worker_token)
+
+        def _is_worker_running(self) -> bool:
+            return bool(self._thread is not None and self._thread.is_alive())
+
+        def _active_config_is_valid(self) -> bool:
+            if self.config_tabs.currentIndex() == 0:
+                return isinstance(self._decoded_connection_payload, dict)
+            server_url = str(self.server_input.text() or "").strip()
+            token = str(self.token_input.text() or "").strip()
+            if not server_url or not token:
+                return False
+            try:
+                normalize_server_url(server_url)
+            except Exception:
+                return False
+            return True
+
+        def _refresh_connect_button_state(self) -> None:
+            can_connect, label = connect_button_state(
+                connected=self._is_worker_running(),
+                config_valid=self._active_config_is_valid(),
+            )
+            self.connect_btn.setEnabled(bool(can_connect))
+            self.connect_btn.setText(label)
 
         def _set_tray_state(self, state_value: str) -> None:
             mapping = {
@@ -664,6 +772,7 @@ def run_desktop(args: argparse.Namespace) -> int:
         def _on_state(self, state_value: str) -> None:
             self._state = str(state_value or "disconnected")
             self._set_tray_state(self._state)
+            self._refresh_connect_button_state()
             if self._state == "connected" and self._hide_on_connect:
                 self.hide()
 
@@ -686,12 +795,30 @@ def run_desktop(args: argparse.Namespace) -> int:
                         self._on_log(f"  Install: {hint}")
 
         def _build_loop(self) -> WorkerLoop:
-            server_url = normalize_server_url(self.server_input.text().strip())
-            token = self.token_input.text().strip()
+            decoded_payload = self._decoded_connection_payload if self.config_tabs.currentIndex() == 0 else None
+            runtime_map = decoded_payload.get("runtime_config") if isinstance(decoded_payload, dict) else None
+            runtime_config = runtime_map if isinstance(runtime_map, dict) else {}
+
+            server_raw = (
+                str(decoded_payload.get("server_url", "")).strip()
+                if isinstance(decoded_payload, dict)
+                else self.server_input.text().strip()
+            )
+            token = (
+                str(decoded_payload.get("worker_token", "")).strip()
+                if isinstance(decoded_payload, dict)
+                else self.token_input.text().strip()
+            )
+            worker_name = (
+                str(decoded_payload.get("worker_name", "")).strip() or "Local Worker"
+                if isinstance(decoded_payload, dict)
+                else self.worker_name_input.text().strip() or "Local Worker"
+            )
+            poll_wait = int(runtime_config.get("poll_wait_seconds") or int(self.poll_wait_input.value()))
+
+            server_url = normalize_server_url(server_raw)
             if not token:
                 raise ValueError("Worker token is required.")
-
-            worker_name = self.worker_name_input.text().strip() or "Local Worker"
             if not str(self._worker_id or "").strip():
                 self._worker_id = _auto_worker_id(worker_name)
 
@@ -728,7 +855,7 @@ def run_desktop(args: argparse.Namespace) -> int:
                 logger=logger,
                 observer=self._observer,
                 config=LoopConfig(
-                    poll_wait_seconds=max(1, int(self.poll_wait_input.value())),
+                    poll_wait_seconds=max(1, int(poll_wait)),
                     max_download_bytes=max(1, int(self.max_download_input.value()) * 1024 * 1024),
                     reconnect_after_failures=3,
                     max_backoff_seconds=60,
@@ -766,6 +893,7 @@ def run_desktop(args: argparse.Namespace) -> int:
 
             self._thread = threading.Thread(target=runner, daemon=True, name="cmq-worker-desktop")
             self._thread.start()
+            self._refresh_connect_button_state()
 
         def _disconnect(self) -> None:
             if self._loop is not None:
@@ -779,8 +907,12 @@ def run_desktop(args: argparse.Namespace) -> int:
             self._loop = None
             self._stop_event = None
             self._bridge.state.emit("disconnected")
+            self._refresh_connect_button_state()
 
-        def _connect_clicked(self) -> None:
+        def _toggle_connection_clicked(self) -> None:
+            if self._is_worker_running():
+                self._disconnect()
+                return
             self._hide_on_connect = not bool(args.show_window)
             self._start_worker()
 
