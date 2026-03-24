@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.41
+
+- Fixed Finder launcher shutdown flow:
+  - `Run Worker.command` now schedules asynchronous Terminal close after background launch,
+  - avoids keeping Terminal open waiting for manual close confirmation in normal double-click flow.
+- Added ZIP packaging script for distribution to another computer:
+  - new `scripts/package_worker_zip.sh`,
+  - produces `dist/ConvertModelForMetaQuest-worker-v<VERSION>.zip`,
+  - excludes local runtime artifacts (`.venv`, `worker_runtime`, `dist`, caches).
+- Updated README with launcher behavior and packaging instructions.
+- Added launcher/unit coverage for:
+  - Terminal auto-close script presence,
+  - package script existence + executable bit + core exclusions.
+
 ## 0.40
 
 - Added desktop startup prerequisite checks shown in a dedicated loading window before opening the worker UI.

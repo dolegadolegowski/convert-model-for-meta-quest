@@ -7,5 +7,7 @@ __pycache__/
 .pytest_cache/
 output/
 reports/
+dist/
+worker_runtime/
 *.blend1
 *.blend2

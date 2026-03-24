@@ -255,6 +255,7 @@ If you want one-file launch from Finder, use:
 
 You can also double-click `Run Worker.command` in Finder.
 On first run it creates `.venv` if missing, installs `PySide6` + `keyring` when needed, and starts the worker UI.
+In normal double-click mode it starts the app in background and closes the Terminal window automatically.
 
 ## Desktop Worker Launcher (no required args)
 Use the single-file desktop launcher:
@@ -265,6 +266,18 @@ python3 scripts/worker_desktop_app.py
 
 After launch, enter server URL and worker token in the app window (or reuse saved values from previous run), then click `Connect`.
 Settings are persisted with `QSettings` and tray menu exposes `Reconnect`, `Logs`, and `Quit`.
+
+## Packaging ZIP for another computer
+
+To build a portable worker source package (without local `.venv` and runtime folders):
+
+```bash
+./scripts/package_worker_zip.sh
+```
+
+The archive is created in `dist/` as:
+
+`ConvertModelForMetaQuest-worker-v<VERSION>.zip`
 
 ### Startup prerequisite checks (desktop app)
 

@@ -70,7 +70,16 @@ fi
 echo "[ok] Worker started in background (PID $WORKER_PID). Logs: $LOG_FILE"
 
 if [[ "${TERM_PROGRAM:-}" == "Apple_Terminal" && -z "${CMQ_KEEP_TERMINAL_OPEN:-}" ]]; then
-  osascript -e 'tell application "Terminal" to if (count of windows) > 0 then close front window' >/dev/null 2>&1 || true
+  (
+    sleep 0.7
+    osascript >/dev/null 2>&1 <<'APPLESCRIPT'
+tell application "Terminal"
+  try
+    if (count of windows) > 0 then close front window
+  end try
+end tell
+APPLESCRIPT
+  ) &
 fi
 
 exit 0
