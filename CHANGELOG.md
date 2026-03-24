@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.37
+
+- Fixed macOS Qt startup crash in desktop worker (`Could not find the Qt platform plugin "cocoa"`).
+- Launcher now prepares a stable plugin path under `/tmp/cmq-qt-plugins/platforms` before creating QApplication.
+- Added automatic plugin copy without metadata-preserving mode (avoids plugin load failure in iCloud-based paths).
+
 ## 0.36
 
 - Added standalone desktop worker launcher: python3 scripts/worker_desktop_app.py (no required CLI params).
