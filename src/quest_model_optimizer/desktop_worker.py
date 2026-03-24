@@ -32,7 +32,6 @@ class DesktopSettings:
     worker_id: str = ""
     poll_wait: int = 30
     max_download_bytes: int = DEFAULT_MAX_DOWNLOAD_BYTES
-    allow_insecure_http: bool = False
     work_dir: str = "worker_runtime"
 
 
@@ -80,7 +79,7 @@ def _auto_worker_id(worker_name: str) -> str:
     return f"worker-{_slugify(worker_name)}-{uuid.uuid4().hex[:8]}"
 
 
-def normalize_server_url(raw_url: str, *, allow_insecure_http: bool) -> str:
+def normalize_server_url(raw_url: str) -> str:
     value = str(raw_url or "").strip()
     parsed = urlsplit(value)
     if not parsed.scheme or not parsed.netloc:
@@ -89,8 +88,8 @@ def normalize_server_url(raw_url: str, *, allow_insecure_http: bool) -> str:
     scheme = parsed.scheme.lower()
     if scheme not in {"https", "http"}:
         raise ValueError("Unsupported URL scheme")
-    if scheme == "http" and not allow_insecure_http:
-        raise ValueError("Insecure http:// is blocked. Use https:// or enable dev mode.")
+    if scheme == "http":
+        raise ValueError("Insecure http:// is blocked. Use https:// server URL.")
 
     base = f"{scheme}://{parsed.netloc}"
     if parsed.path and parsed.path != "/":
@@ -112,7 +111,6 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_MAX_DOWNLOAD_BYTES,
         help="Initial max source model size accepted by worker",
     )
-    parser.add_argument("--allow-insecure-http", action="store_true", help="Allow http:// server URL (dev only)")
     parser.add_argument("--work-dir", default="worker_runtime", help="Initial worker runtime directory")
     parser.add_argument("--show-window", action="store_true", help="Keep window visible after successful connect")
     parser.add_argument("--blender-exec", default=None, help="Optional Blender executable path")
@@ -128,7 +126,6 @@ def run_desktop(args: argparse.Namespace) -> int:
         from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPixmap
         from PySide6.QtWidgets import (
             QApplication,
-            QCheckBox,
             QFormLayout,
             QHBoxLayout,
             QLabel,
@@ -259,15 +256,12 @@ def run_desktop(args: argparse.Namespace) -> int:
             self.work_dir_input = QLineEdit()
             self.work_dir_input.setPlaceholderText("worker_runtime")
 
-            self.allow_http_input = QCheckBox("Allow insecure HTTP (dev only)")
-
             form.addRow("Server URL", self.server_input)
             form.addRow("Token", self.token_input)
             form.addRow("Worker name", self.worker_name_input)
             form.addRow("Poll wait", self.poll_wait_input)
             form.addRow("Max download", self.max_download_input)
             form.addRow("Work dir", self.work_dir_input)
-            form.addRow("", self.allow_http_input)
             layout.addLayout(form)
 
             buttons = QHBoxLayout()
@@ -333,7 +327,6 @@ def run_desktop(args: argparse.Namespace) -> int:
                 worker_id="",
                 poll_wait=max(1, int(args.poll_wait or 30)),
                 max_download_bytes=max(1, int(args.max_download_bytes or DEFAULT_MAX_DOWNLOAD_BYTES)),
-                allow_insecure_http=bool(args.allow_insecure_http),
                 work_dir=str(args.work_dir or "worker_runtime").strip() or "worker_runtime",
             )
             server_url = str(self._settings.value("server_url", defaults.server_url) or "").strip()
@@ -341,7 +334,6 @@ def run_desktop(args: argparse.Namespace) -> int:
             worker_id = str(self._settings.value("worker_id", defaults.worker_id) or "").strip()
             poll_wait = int(self._settings.value("poll_wait", defaults.poll_wait) or defaults.poll_wait)
             max_download_bytes = int(self._settings.value("max_download_bytes", defaults.max_download_bytes) or defaults.max_download_bytes)
-            allow_insecure_http = self._settings_bool("allow_insecure_http", defaults.allow_insecure_http)
             work_dir = str(self._settings.value("work_dir", defaults.work_dir) or defaults.work_dir).strip() or "worker_runtime"
 
             if defaults.server_url:
@@ -357,7 +349,6 @@ def run_desktop(args: argparse.Namespace) -> int:
             self.poll_wait_input.setValue(max(1, min(120, poll_wait)))
             self.max_download_input.setValue(max(1, min(10240, max_download_bytes // (1024 * 1024))))
             self.work_dir_input.setText(work_dir)
-            self.allow_http_input.setChecked(bool(allow_insecure_http))
 
             self._worker_id = worker_id or _auto_worker_id(worker_name)
 
@@ -368,7 +359,6 @@ def run_desktop(args: argparse.Namespace) -> int:
             self._settings.setValue("worker_id", self._worker_id)
             self._settings.setValue("poll_wait", int(self.poll_wait_input.value()))
             self._settings.setValue("max_download_bytes", int(self.max_download_input.value()) * 1024 * 1024)
-            self._settings.setValue("allow_insecure_http", bool(self.allow_http_input.isChecked()))
             self._settings.setValue("work_dir", self.work_dir_input.text().strip() or "worker_runtime")
             self._vault.save(server_url, self.token_input.text().strip())
 
@@ -405,11 +395,7 @@ def run_desktop(args: argparse.Namespace) -> int:
                 self.logs.appendPlainText(line)
 
         def _build_loop(self) -> WorkerLoop:
-            allow_insecure_http = bool(self.allow_http_input.isChecked())
-            server_url = normalize_server_url(
-                self.server_input.text().strip(),
-                allow_insecure_http=allow_insecure_http,
-            )
+            server_url = normalize_server_url(self.server_input.text().strip())
             token = self.token_input.text().strip()
             if not token:
                 raise ValueError("Worker token is required.")
@@ -430,7 +416,7 @@ def run_desktop(args: argparse.Namespace) -> int:
                 timeout=60,
                 download_timeout=300,
                 upload_timeout=600,
-                allow_insecure_http=allow_insecure_http,
+                allow_insecure_http=False,
             )
 
             processor = PipelineProcessor(

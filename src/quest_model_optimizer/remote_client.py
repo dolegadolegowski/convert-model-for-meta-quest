@@ -308,7 +308,7 @@ class RemoteWorkerClient:
         if parsed.scheme not in {"https", "http"}:
             raise ValueError("server_url must use https:// (or http:// with explicit override)")
         if parsed.scheme == "http" and not allow_insecure_http:
-            raise ValueError("insecure http server_url blocked; use https:// or allow_insecure_http=True")
+            raise ValueError("Insecure http:// is blocked. Use https:// server URL.")
 
         self.server_url = normalized_url
         self.worker_token = worker_token

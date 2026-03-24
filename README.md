@@ -107,7 +107,6 @@ Worker configuration via environment variables:
 Security defaults:
 
 - Worker enforces `https://` server URL by default.
-- For local development only, `http://` can be enabled using `--allow-insecure-http`.
 - Bearer token is attached only for same-origin download endpoints; external signed URLs are fetched without auth header.
 - Downloaded file is validated against optional job checksum (`sha256` / `input_sha256`) and size limit (`--max-download-bytes`).
 - Worker auto-generates identity (`worker_name` from hostname and `worker_id` as `worker-<hostname>-<short_uuid>`).

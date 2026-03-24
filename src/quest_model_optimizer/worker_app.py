@@ -43,11 +43,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser.add_argument("--work-dir", default="worker_runtime", help="Directory for downloaded/processed files")
     parser.add_argument(
-        "--allow-insecure-http",
-        action="store_true",
-        help="Allow http:// server URL (for local development only)",
-    )
-    parser.add_argument(
         "--poll-wait",
         "--claim-wait",
         dest="poll_wait",
@@ -193,7 +188,7 @@ def main(argv: list[str] | None = None) -> int:
             timeout=max(10, int(args.http_timeout_seconds or DEFAULT_HTTP_TIMEOUT_SECONDS)),
             download_timeout=max(10, int(args.download_timeout_seconds or DEFAULT_DOWNLOAD_TIMEOUT_SECONDS)),
             upload_timeout=max(10, int(args.upload_timeout_seconds or DEFAULT_UPLOAD_TIMEOUT_SECONDS)),
-            allow_insecure_http=bool(args.allow_insecure_http),
+            allow_insecure_http=False,
             heartbeat_interval_hint=args.heartbeat_interval,
             lease_timeout_hint=args.lease_timeout,
         )

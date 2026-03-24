@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.39
+
+- Updated `Run Worker.command` for true double-click launch mode: starts desktop worker in background and auto-closes Terminal window when launched without CLI args.
+- Kept foreground mode for explicit args (for example `--help`) so diagnostics still work from terminal.
+- Removed insecure HTTP option from desktop worker UX and CLI parser (`--allow-insecure-http` no longer exposed in desktop launcher flow).
+- Standardized HTTPS-only validation message in remote client.
+- Updated README security section to remove insecure HTTP opt-in guidance.
+- Verified with tests:
+  - `PYTHONPATH=src python3 -m unittest tests.test_worker_desktop_launcher_unittest tests.test_worker_app_unittest` ✅
+  - `./Run Worker.command --help` ✅
+
 ## 0.38
 
 - Added macOS single-file launcher `Run Worker.command` (double-click friendly in Finder).
