@@ -265,3 +265,16 @@ python3 scripts/worker_desktop_app.py
 
 After launch, enter server URL and worker token in the app window (or reuse saved values from previous run), then click `Connect`.
 Settings are persisted with `QSettings` and tray menu exposes `Reconnect`, `Logs`, and `Quit`.
+
+### Startup prerequisite checks (desktop app)
+
+At startup the desktop worker now opens a loading dialog that verifies required prerequisites:
+
+- Python runtime version (3.10+)
+- Python SSL support
+- Blender executable availability
+- Writable worker runtime directory
+- `keyring` package (optional, for secure token storage)
+
+Each check is displayed with `OK` or `NOT FOUND`.  
+If a prerequisite is missing, the dialog shows an English installation/fix instruction (for example Blender install commands).

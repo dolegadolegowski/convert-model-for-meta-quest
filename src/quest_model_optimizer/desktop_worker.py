@@ -4,17 +4,23 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+import importlib.util
 import logging
 import platform
 from pathlib import Path
+import shutil
+import subprocess
 import sys
+import tempfile
 import threading
 import time
 import uuid
+from typing import Callable
 from urllib.parse import urlsplit
 
 from .logging_utils import configure_logging
 from .remote_client import RemoteWorkerClient
+from .runner import detect_blender_executable
 from .version import read_version
 from .worker_loop import LoopConfig, WorkerLoop, WorkerObserver
 from .worker_processor import PipelineOptions, PipelineProcessor
@@ -23,6 +29,7 @@ APP_ORG = "ConvertModelForMetaQuest"
 APP_NAME = "RemoteWorkerDesktop"
 TOKEN_SERVICE = "ConvertModelForMetaQuestWorkerToken"
 DEFAULT_MAX_DOWNLOAD_BYTES = 1024 * 1024 * 1024
+MIN_PYTHON_VERSION = (3, 10)
 
 
 @dataclass
@@ -33,6 +40,169 @@ class DesktopSettings:
     poll_wait: int = 30
     max_download_bytes: int = DEFAULT_MAX_DOWNLOAD_BYTES
     work_dir: str = "worker_runtime"
+
+
+@dataclass
+class PrerequisiteResult:
+    key: str
+    name: str
+    required: bool
+    ok: bool
+    details: str
+    install_hint: str = ""
+
+
+@dataclass
+class PrerequisiteCheck:
+    key: str
+    name: str
+    required: bool
+    install_hint: str
+    runner: Callable[[], tuple[bool, str]]
+
+
+def _english_blender_install_hint() -> str:
+    return (
+        "Install Blender and ensure the executable is available.\n"
+        "- macOS: brew install --cask blender\n"
+        "- Windows: download installer from https://www.blender.org/download/\n"
+        "- Ubuntu/Debian: sudo apt update && sudo apt install blender\n"
+        "Then restart the app. You can also set BLENDER_EXECUTABLE to a custom path."
+    )
+
+
+def _resolve_executable(command_or_path: str) -> str | None:
+    value = str(command_or_path or "").strip()
+    if not value:
+        return None
+    path = Path(value).expanduser()
+    if path.exists():
+        return str(path)
+    return shutil.which(value)
+
+
+def _build_prerequisite_checks(args: argparse.Namespace) -> list[PrerequisiteCheck]:
+    def check_python() -> tuple[bool, str]:
+        current = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+        ok = (sys.version_info.major, sys.version_info.minor) >= MIN_PYTHON_VERSION
+        details = (
+            f"Found Python {current}."
+            if ok
+            else f"Found Python {current}, but {MIN_PYTHON_VERSION[0]}.{MIN_PYTHON_VERSION[1]}+ is required."
+        )
+        return ok, details
+
+    def check_ssl() -> tuple[bool, str]:
+        try:
+            import ssl  # noqa: PLC0415
+        except Exception as exc:
+            return False, f"Python SSL module is unavailable: {exc}"
+        openssl = str(getattr(ssl, "OPENSSL_VERSION", "unknown OpenSSL")).strip()
+        return True, f"SSL runtime ready ({openssl})."
+
+    def check_keyring() -> tuple[bool, str]:
+        if importlib.util.find_spec("keyring") is None:
+            return False, "Python package 'keyring' is not installed. Secure token storage will be unavailable."
+        return True, "keyring package detected for secure token storage."
+
+    def check_blender() -> tuple[bool, str]:
+        candidate = detect_blender_executable(getattr(args, "blender_exec", None))
+        resolved = _resolve_executable(candidate)
+        if not resolved:
+            return False, f"Blender executable not found. Tried: {candidate!r}."
+        try:
+            proc = subprocess.run(
+                [resolved, "--version"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            )
+        except Exception as exc:
+            return False, f"Blender executable found at '{resolved}' but version check failed: {exc}"
+        output = str((proc.stdout or proc.stderr or "").strip()).splitlines()
+        first_line = output[0] if output else "Version output unavailable"
+        if proc.returncode != 0:
+            return False, f"Blender executable found at '{resolved}' but '--version' returned code {proc.returncode}."
+        return True, f"{first_line} (path: {resolved})"
+
+    def check_workdir() -> tuple[bool, str]:
+        raw_work_dir = str(getattr(args, "work_dir", "worker_runtime") or "worker_runtime").strip() or "worker_runtime"
+        work_root = Path(raw_work_dir).expanduser().resolve()
+        try:
+            work_root.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(prefix="cmq-preflight-", dir=work_root, delete=True):
+                pass
+        except Exception as exc:
+            return False, f"Cannot write to worker runtime directory '{work_root}': {exc}"
+        return True, f"Worker runtime directory is writable: {work_root}"
+
+    return [
+        PrerequisiteCheck(
+            key="python_runtime",
+            name="Python runtime",
+            required=True,
+            install_hint=(
+                "Install Python 3.10+ from https://www.python.org/downloads/ "
+                "and recreate the virtual environment."
+            ),
+            runner=check_python,
+        ),
+        PrerequisiteCheck(
+            key="ssl_module",
+            name="Python SSL support",
+            required=True,
+            install_hint=(
+                "Install a Python build with OpenSSL support, then recreate the environment "
+                "and reinstall dependencies."
+            ),
+            runner=check_ssl,
+        ),
+        PrerequisiteCheck(
+            key="keyring_package",
+            name="Secure token storage (keyring)",
+            required=False,
+            install_hint="Run: python3 -m pip install keyring",
+            runner=check_keyring,
+        ),
+        PrerequisiteCheck(
+            key="blender_executable",
+            name="Blender executable",
+            required=True,
+            install_hint=_english_blender_install_hint(),
+            runner=check_blender,
+        ),
+        PrerequisiteCheck(
+            key="work_dir_writable",
+            name="Worker runtime directory write access",
+            required=True,
+            install_hint=(
+                "Choose a writable directory for work_dir (or fix filesystem permissions), "
+                "then start the worker again."
+            ),
+            runner=check_workdir,
+        ),
+    ]
+
+
+def evaluate_startup_prerequisites(args: argparse.Namespace) -> list[PrerequisiteResult]:
+    results: list[PrerequisiteResult] = []
+    for check in _build_prerequisite_checks(args):
+        try:
+            ok, details = check.runner()
+        except Exception as exc:  # pragma: no cover - defensive safety net
+            ok, details = False, f"Unexpected check failure: {exc}"
+        results.append(
+            PrerequisiteResult(
+                key=check.key,
+                name=check.name,
+                required=check.required,
+                ok=bool(ok),
+                details=str(details or "").strip() or "No details provided.",
+                install_hint=check.install_hint,
+            )
+        )
+    return results
 
 
 class TokenVault:
@@ -122,10 +292,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def run_desktop(args: argparse.Namespace) -> int:
     try:
-        from PySide6.QtCore import QObject, QSettings, Qt, Signal
+        from PySide6.QtCore import QObject, QSettings, Qt, QTimer, Signal
         from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPixmap
         from PySide6.QtWidgets import (
             QApplication,
+            QDialog,
             QFormLayout,
             QHBoxLayout,
             QLabel,
@@ -134,6 +305,7 @@ def run_desktop(args: argparse.Namespace) -> int:
             QMenu,
             QMessageBox,
             QPlainTextEdit,
+            QProgressBar,
             QPushButton,
             QSpinBox,
             QSystemTrayIcon,
@@ -144,6 +316,118 @@ def run_desktop(args: argparse.Namespace) -> int:
         print("PySide6 is required for desktop worker UI. Install: python3 -m pip install PySide6 keyring", file=sys.stderr)
         print(f"Import error: {exc}", file=sys.stderr)
         return 2
+
+    class PreflightDialog(QDialog):
+        def __init__(self, startup_args: argparse.Namespace) -> None:
+            super().__init__()
+            self.setWindowTitle("Worker Startup Checks")
+            self.resize(760, 500)
+
+            self._checks = _build_prerequisite_checks(startup_args)
+            self.results: list[PrerequisiteResult] = []
+            self._index = 0
+            self._completed = False
+            self._auto_accept_timer: QTimer | None = None
+
+            layout = QVBoxLayout(self)
+            layout.setContentsMargins(14, 14, 14, 14)
+            layout.setSpacing(10)
+
+            self.title_label = QLabel("Checking worker prerequisites...")
+            self.title_label.setStyleSheet("font-weight:600;font-size:15px;")
+            layout.addWidget(self.title_label)
+
+            self.status_label = QLabel("Starting checks...")
+            self.status_label.setWordWrap(True)
+            layout.addWidget(self.status_label)
+
+            self.progress = QProgressBar()
+            self.progress.setRange(0, max(1, len(self._checks)))
+            self.progress.setValue(0)
+            layout.addWidget(self.progress)
+
+            self.log = QPlainTextEdit()
+            self.log.setReadOnly(True)
+            layout.addWidget(self.log, 1)
+
+            actions = QHBoxLayout()
+            actions.addStretch(1)
+            self.continue_btn = QPushButton("Open Worker")
+            self.quit_btn = QPushButton("Quit")
+            self.continue_btn.setEnabled(False)
+            self.quit_btn.setEnabled(False)
+            self.continue_btn.clicked.connect(self.accept)
+            self.quit_btn.clicked.connect(self.reject)
+            actions.addWidget(self.continue_btn)
+            actions.addWidget(self.quit_btn)
+            layout.addLayout(actions)
+
+            QTimer.singleShot(30, self._run_next_check)
+
+        def _append_result(self, result: PrerequisiteResult) -> None:
+            level = "OK" if result.ok else "NOT FOUND"
+            required = "required" if result.required else "optional"
+            self.log.appendPlainText(f"[{level}] {result.name} ({required})")
+            self.log.appendPlainText(f"  {result.details}")
+            if not result.ok and result.install_hint:
+                for line in str(result.install_hint).splitlines():
+                    self.log.appendPlainText(f"  Install: {line}")
+            self.log.appendPlainText("")
+
+        def _run_next_check(self) -> None:
+            if self._index >= len(self._checks):
+                self._finish()
+                return
+
+            check = self._checks[self._index]
+            self.status_label.setText(f"Checking: {check.name}...")
+            QApplication.processEvents()
+            try:
+                ok, details = check.runner()
+            except Exception as exc:  # pragma: no cover - defensive safety net
+                ok, details = False, f"Unexpected check failure: {exc}"
+
+            result = PrerequisiteResult(
+                key=check.key,
+                name=check.name,
+                required=check.required,
+                ok=bool(ok),
+                details=str(details or "").strip() or "No details provided.",
+                install_hint=check.install_hint,
+            )
+            self.results.append(result)
+            self._append_result(result)
+            self._index += 1
+            self.progress.setValue(self._index)
+            QTimer.singleShot(20, self._run_next_check)
+
+        def _finish(self) -> None:
+            if self._completed:
+                return
+            self._completed = True
+
+            missing_required = [item for item in self.results if item.required and not item.ok]
+            missing_optional = [item for item in self.results if not item.required and not item.ok]
+
+            if missing_required:
+                self.title_label.setText("Some required prerequisites are missing.")
+                self.status_label.setText(
+                    "Fix items marked NOT FOUND. You can still open the worker window, but processing will fail until requirements are installed."
+                )
+                self.continue_btn.setText("Open Worker Anyway")
+            elif missing_optional:
+                self.title_label.setText("Startup checks completed (optional items missing).")
+                self.status_label.setText("Optional components are missing. Worker can run, but some convenience features may be disabled.")
+            else:
+                self.title_label.setText("All prerequisites are ready.")
+                self.status_label.setText("Worker startup checks passed.")
+                self._auto_accept_timer = QTimer(self)
+                self._auto_accept_timer.setSingleShot(True)
+                self._auto_accept_timer.timeout.connect(self.accept)
+                self._auto_accept_timer.start(700)
+
+            self.continue_btn.setEnabled(True)
+            self.quit_btn.setEnabled(True)
 
     class EventBridge(QObject):
         log = Signal(str)
@@ -196,7 +480,7 @@ def run_desktop(args: argparse.Namespace) -> int:
                 self._bridge.state.emit("processing")
 
     class MainWindow(QMainWindow):
-        def __init__(self) -> None:
+        def __init__(self, preflight_results: list[PrerequisiteResult] | None = None) -> None:
             super().__init__()
             self.setWindowTitle(f"ConvertModelForMetaQuest Worker v{read_version()}")
             self.resize(860, 600)
@@ -218,6 +502,7 @@ def run_desktop(args: argparse.Namespace) -> int:
             self._build_ui()
             self._build_tray()
             self._load_settings()
+            self._append_preflight_summary(preflight_results or [])
 
         def _build_ui(self) -> None:
             root = QWidget(self)
@@ -312,13 +597,6 @@ def run_desktop(args: argparse.Namespace) -> int:
             self.tray.setVisible(True)
             self._set_tray_state("disconnected")
 
-        def _settings_bool(self, key: str, default: bool) -> bool:
-            raw = self._settings.value(key, default)
-            if isinstance(raw, bool):
-                return raw
-            text = str(raw).strip().lower()
-            return text in {"1", "true", "yes", "on"}
-
         def _load_settings(self) -> None:
             default_worker_name = str(args.worker_name or "Local Worker").strip() or "Local Worker"
             defaults = DesktopSettings(
@@ -393,6 +671,19 @@ def run_desktop(args: argparse.Namespace) -> int:
             line = str(message or "").strip()
             if line:
                 self.logs.appendPlainText(line)
+
+        def _append_preflight_summary(self, preflight_results: list[PrerequisiteResult]) -> None:
+            if not preflight_results:
+                return
+            self._on_log("Startup prerequisite check summary:")
+            for item in preflight_results:
+                status_label = "OK" if item.ok else "NOT FOUND"
+                required_label = "required" if item.required else "optional"
+                self._on_log(f"- [{status_label}] {item.name} ({required_label}): {item.details}")
+                if not item.ok and item.install_hint:
+                    hint_lines = [line.strip() for line in str(item.install_hint).splitlines() if line.strip()]
+                    for hint in hint_lines:
+                        self._on_log(f"  Install: {hint}")
 
         def _build_loop(self) -> WorkerLoop:
             server_url = normalize_server_url(self.server_input.text().strip())
@@ -520,7 +811,11 @@ def run_desktop(args: argparse.Namespace) -> int:
 
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
-    window = MainWindow()
+    preflight = PreflightDialog(args)
+    if preflight.exec() != QDialog.Accepted:
+        return 3
+
+    window = MainWindow(preflight_results=preflight.results)
     window.show()
     return int(app.exec())
 

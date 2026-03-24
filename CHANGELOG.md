@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.40
+
+- Added desktop startup prerequisite checks shown in a dedicated loading window before opening the worker UI.
+- New startup checks include:
+  - Python runtime version (3.10+),
+  - Python SSL support,
+  - Blender executable availability and basic `--version` validation,
+  - write access to configured worker runtime directory,
+  - `keyring` package availability (optional).
+- Each prerequisite now reports explicit `OK` / `NOT FOUND` status and shows English install/fix instructions when missing.
+- Added startup preflight summary logging inside the main worker log panel.
+- Added unit tests for preflight checks and missing-dependency instruction paths.
+
 ## 0.39
 
 - Updated `Run Worker.command` for true double-click launch mode: starts desktop worker in background and auto-closes Terminal window when launched without CLI args.
