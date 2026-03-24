@@ -8,7 +8,6 @@
 
 ## 0.37
 
-- Added single-file double-click launcher `Run Worker.command` for macOS Finder startup.
 - Fixed macOS Qt startup crash in desktop worker (`Could not find the Qt platform plugin "cocoa"`).
 - Launcher now prepares a stable plugin path under `/tmp/cmq-qt-plugins/platforms` before creating QApplication.
 - Added automatic plugin copy without metadata-preserving mode (avoids plugin load failure in iCloud-based paths).
