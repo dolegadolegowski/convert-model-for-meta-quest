@@ -271,6 +271,18 @@ Manual entry is still available in the `Manual Config` tab (server URL, token, w
 Both code-based and manual settings are persisted with `QSettings` and reused on next launch.
 Tray menu exposes `Reconnect`, `Logs`, and `Quit`.
 
+### Desktop auto-update (GitHub)
+
+- App checks GitHub for updates shortly after startup and shows status next to current version.
+- Use `Check Updates` (window button or tray menu) to force manual check.
+- If newer version is available, `Install Update` becomes active.
+- Update source:
+  - Git checkout: app runs `git pull --ff-only`.
+  - Non-git package: app downloads latest GitHub release ZIP and overlays project files.
+- During ZIP update, local runtime data is preserved (`.venv`, `worker_runtime`, `dist` are not overwritten).
+- Saved settings and tokens are preserved automatically because they are stored in `QSettings` + keyring outside project files.
+- After successful update app restarts automatically.
+
 ## Packaging ZIP for another computer
 
 To build a portable worker source package (without local `.venv` and runtime folders):

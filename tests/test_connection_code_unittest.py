@@ -54,6 +54,8 @@ class ConnectionCodeTests(unittest.TestCase):
         self.assertIn("Manual Config", content)
         self.assertIn("connection_code", content)
         self.assertIn("self.connect_btn.setText(label)", content)
+        self.assertIn("Check Updates", content)
+        self.assertIn("Install Update", content)
 
 
 if __name__ == "__main__":

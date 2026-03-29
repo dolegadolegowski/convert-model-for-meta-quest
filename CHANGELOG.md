@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.44
+
+- Added desktop self-update subsystem integrated with GitHub releases.
+- Desktop app now checks for updates on startup and can perform manual check via `Check Updates`.
+- Added `Install Update` action (window + tray) with automatic restart after successful update.
+- Update apply strategy:
+  - git worktree: `git pull --ff-only`,
+  - packaged (no `.git`): download latest release ZIP and overlay project files.
+- Update flow preserves local runtime data (`.venv`, `worker_runtime`, `dist`) and keeps user settings/tokens (`QSettings` + keyring).
+- Added updater module tests for:
+  - version normalization/comparison,
+  - release parsing from GitHub response,
+  - ZIP install path with preserved local directories,
+  - git-mode installation path.
+- Extended desktop UI/source test to verify update controls are present.
+
 ## 0.43
 
 - Hardened `Run Worker.command` for new macOS machines:

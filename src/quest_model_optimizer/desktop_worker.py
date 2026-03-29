@@ -22,6 +22,13 @@ from .connection_code import ConnectionCodeError, connect_button_state, decode_c
 from .logging_utils import configure_logging
 from .remote_client import RemoteWorkerClient
 from .runner import detect_blender_executable
+from .updater import (
+    DEFAULT_GITHUB_REPO,
+    UpdateInfo,
+    UpdateInstallResult,
+    check_for_updates,
+    install_update,
+)
 from .version import read_version
 from .worker_loop import LoopConfig, WorkerLoop, WorkerObserver
 from .worker_processor import PipelineOptions, PipelineProcessor
@@ -287,6 +294,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--blender-exec", default=None, help="Optional Blender executable path")
     parser.add_argument("--face-limit", type=int, default=400000, help="Face limit passed to optimization pipeline")
     parser.add_argument("--blender-timeout-seconds", type=int, default=1800, help="Timeout for one Blender process")
+    parser.add_argument("--update-repo", default=DEFAULT_GITHUB_REPO, help="GitHub repo for desktop app self-update checks")
     parser.add_argument("--log-level", default="INFO", help="Logging level")
     return parser
 
@@ -434,6 +442,8 @@ def run_desktop(args: argparse.Namespace) -> int:
     class EventBridge(QObject):
         log = Signal(str)
         state = Signal(str)
+        update_check = Signal(object)
+        update_install = Signal(object)
 
     class QtLogHandler(logging.Handler):
         def __init__(self, bridge: EventBridge) -> None:
@@ -490,6 +500,8 @@ def run_desktop(args: argparse.Namespace) -> int:
             self._bridge = EventBridge()
             self._bridge.log.connect(self._on_log)
             self._bridge.state.connect(self._on_state)
+            self._bridge.update_check.connect(self._on_update_check_result)
+            self._bridge.update_install.connect(self._on_update_install_result)
             self._observer = DesktopObserver(self._bridge)
 
             self._vault = TokenVault()
@@ -500,11 +512,15 @@ def run_desktop(args: argparse.Namespace) -> int:
             self._logger: logging.Logger | None = None
             self._hide_on_connect = not bool(args.show_window)
             self._state = "disconnected"
+            self._latest_update_info: UpdateInfo | None = None
+            self._update_check_in_progress = False
+            self._update_install_in_progress = False
 
             self._build_ui()
             self._build_tray()
             self._load_settings()
             self._append_preflight_summary(preflight_results or [])
+            QTimer.singleShot(1200, self._check_for_updates_silent)
 
         def _build_ui(self) -> None:
             root = QWidget(self)
@@ -521,6 +537,10 @@ def run_desktop(args: argparse.Namespace) -> int:
             status_row.addWidget(self.status_label)
             status_row.addStretch(1)
             layout.addLayout(status_row)
+
+            self.version_label = QLabel(f"Version {read_version()} | Checking for updates...")
+            self.version_label.setStyleSheet("color:#d0d7de;")
+            layout.addWidget(self.version_label)
 
             self.config_tabs = QTabWidget()
 
@@ -587,6 +607,13 @@ def run_desktop(args: argparse.Namespace) -> int:
             self.connect_btn = QPushButton("Connect")
             self.connect_btn.clicked.connect(self._toggle_connection_clicked)
             buttons.addWidget(self.connect_btn)
+            self.check_updates_btn = QPushButton("Check Updates")
+            self.check_updates_btn.clicked.connect(self._check_for_updates_manual)
+            buttons.addWidget(self.check_updates_btn)
+            self.install_update_btn = QPushButton("Install Update")
+            self.install_update_btn.clicked.connect(self._install_update_clicked)
+            self.install_update_btn.setEnabled(False)
+            buttons.addWidget(self.install_update_btn)
             buttons.addStretch(1)
             layout.addLayout(buttons)
 
@@ -618,12 +645,18 @@ def run_desktop(args: argparse.Namespace) -> int:
 
             menu = QMenu()
             self.action_reconnect = QAction("Reconnect", self)
+            self.action_check_updates = QAction("Check Updates", self)
+            self.action_install_update = QAction("Install Update", self)
             self.action_logs = QAction("Logs", self)
             self.action_quit = QAction("Quit", self)
             self.action_reconnect.triggered.connect(self._reconnect_clicked)
+            self.action_check_updates.triggered.connect(self._check_for_updates_manual)
+            self.action_install_update.triggered.connect(self._install_update_clicked)
             self.action_logs.triggered.connect(self._show_window)
             self.action_quit.triggered.connect(self._quit_app)
             menu.addAction(self.action_reconnect)
+            menu.addAction(self.action_check_updates)
+            menu.addAction(self.action_install_update)
             menu.addAction(self.action_logs)
             menu.addSeparator()
             menu.addAction(self.action_quit)
@@ -755,6 +788,13 @@ def run_desktop(args: argparse.Namespace) -> int:
             )
             self.connect_btn.setEnabled(bool(can_connect))
             self.connect_btn.setText(label)
+            can_install_update = bool(
+                self._latest_update_info is not None
+                and self._latest_update_info.available
+                and not self._update_install_in_progress
+            )
+            self.install_update_btn.setEnabled(can_install_update)
+            self.action_install_update.setEnabled(can_install_update)
 
         def _set_tray_state(self, state_value: str) -> None:
             mapping = {
@@ -793,6 +833,157 @@ def run_desktop(args: argparse.Namespace) -> int:
                     hint_lines = [line.strip() for line in str(item.install_hint).splitlines() if line.strip()]
                     for hint in hint_lines:
                         self._on_log(f"  Install: {hint}")
+
+        def _check_for_updates_silent(self) -> None:
+            self._check_for_updates(user_initiated=False)
+
+        def _check_for_updates_manual(self) -> None:
+            self._check_for_updates(user_initiated=True)
+
+        def _check_for_updates(self, user_initiated: bool) -> None:
+            if self._update_check_in_progress:
+                if user_initiated:
+                    self._on_log("Update check is already in progress.")
+                return
+            self._update_check_in_progress = True
+            self.version_label.setText(f"Version {read_version()} | Checking for updates...")
+            if user_initiated:
+                self._on_log("Checking for updates on GitHub...")
+
+            current_version = read_version()
+            repo_full_name = str(args.update_repo or DEFAULT_GITHUB_REPO).strip() or DEFAULT_GITHUB_REPO
+
+            def runner() -> None:
+                info = check_for_updates(current_version=current_version, repo_full_name=repo_full_name)
+                self._bridge.update_check.emit({"info": info, "user_initiated": user_initiated})
+
+            threading.Thread(target=runner, daemon=True, name="cmq-update-check").start()
+
+        def _on_update_check_result(self, payload: object) -> None:
+            info: UpdateInfo
+            user_initiated = False
+            if isinstance(payload, dict):
+                info = payload.get("info")  # type: ignore[assignment]
+                user_initiated = bool(payload.get("user_initiated"))
+            else:
+                info = payload  # type: ignore[assignment]
+            self._update_check_in_progress = False
+            if not isinstance(info, UpdateInfo):
+                self.version_label.setText(f"Version {read_version()} | Update status unavailable")
+                return
+            self._latest_update_info = info
+
+            if info.error:
+                self.version_label.setText(f"Version {info.current_version} | Update check failed")
+                if user_initiated:
+                    QMessageBox.warning(self, "Update check failed", str(info.error))
+                self._on_log(f"Update check failed: {info.error}")
+                self._refresh_connect_button_state()
+                return
+
+            if info.available and info.latest_version:
+                release_label = info.release_name or info.latest_version
+                self.version_label.setText(
+                    f"Version {info.current_version} | Update available: {info.latest_version}"
+                )
+                self._on_log(f"Update available: {release_label} ({info.latest_version}).")
+                self.tray.showMessage(
+                    "ConvertModelForMetaQuest",
+                    f"New version available: {info.latest_version}",
+                    QSystemTrayIcon.Information,
+                    3500,
+                )
+                if user_initiated:
+                    QMessageBox.information(
+                        self,
+                        "Update available",
+                        f"New version {info.latest_version} is available.\nUse 'Install Update' to apply it.",
+                    )
+            else:
+                current = info.current_version or read_version()
+                self.version_label.setText(f"Version {current} | Up to date")
+                if user_initiated:
+                    QMessageBox.information(self, "No updates", "You already have the latest version.")
+            self._refresh_connect_button_state()
+
+        def _install_update_clicked(self) -> None:
+            if self._update_install_in_progress:
+                self._on_log("Update installation is already in progress.")
+                return
+            if not self._latest_update_info or not self._latest_update_info.available:
+                self._check_for_updates(user_initiated=True)
+                return
+
+            latest = self._latest_update_info.latest_version or "unknown"
+            answer = QMessageBox.question(
+                self,
+                "Install update",
+                f"Install update to version {latest} now?\n\nThe app will restart after successful update.",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes,
+            )
+            if answer != QMessageBox.Yes:
+                return
+
+            self._update_install_in_progress = True
+            self._refresh_connect_button_state()
+            self.check_updates_btn.setEnabled(False)
+            self._disconnect()
+            self._on_log("Starting self-update...")
+
+            project_root = Path(__file__).resolve().parents[2]
+            update_info = self._latest_update_info
+
+            def runner() -> None:
+                result = install_update(
+                    project_root=project_root,
+                    update_info=update_info,
+                    read_version_fn=read_version,
+                )
+                self._bridge.update_install.emit(result)
+
+            threading.Thread(target=runner, daemon=True, name="cmq-update-install").start()
+
+        def _restart_after_update(self) -> None:
+            project_root = Path(__file__).resolve().parents[2]
+            script_path = project_root / "scripts" / "worker_desktop_app.py"
+            subprocess.Popen(
+                [sys.executable, str(script_path)],
+                cwd=str(project_root),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            QApplication.quit()
+
+        def _on_update_install_result(self, result: object) -> None:
+            self._update_install_in_progress = False
+            self.check_updates_btn.setEnabled(True)
+            self._refresh_connect_button_state()
+            if not isinstance(result, UpdateInstallResult):
+                QMessageBox.warning(self, "Update failed", "Unknown updater response.")
+                return
+            if not result.ok:
+                self._on_log(f"Self-update failed: {result.message}")
+                QMessageBox.warning(self, "Update failed", result.message)
+                return
+
+            self._on_log(result.message)
+            self.version_label.setText(f"Version {result.installed_version} | Update installed")
+            self._latest_update_info = UpdateInfo(
+                current_version=result.installed_version,
+                latest_version=result.installed_version,
+                available=False,
+                html_url=None,
+                download_url=None,
+                release_name=result.installed_version,
+                error=None,
+            )
+            QMessageBox.information(
+                self,
+                "Update installed",
+                f"Updated from {result.previous_version} to {result.installed_version}.\nThe app will restart now.",
+            )
+            self._restart_after_update()
 
         def _build_loop(self) -> WorkerLoop:
             decoded_payload = self._decoded_connection_payload if self.config_tabs.currentIndex() == 0 else None
