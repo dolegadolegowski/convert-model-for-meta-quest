@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1
+
+- Fixed connection-code secret loading when worker is started outside Finder launcher.
+- Added shared env loader that auto-loads local `.cmq_worker.env` in both:
+  - `scripts/worker_desktop_app.py`
+  - `scripts/run_worker.py`
+- Added unit tests for local env-file loading behavior.
+
 ## 1.0
 
 - Released stable worker version `1.0`.

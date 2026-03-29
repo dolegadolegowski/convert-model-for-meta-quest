@@ -265,6 +265,8 @@ Use the single-file desktop launcher:
 python3 scripts/worker_desktop_app.py
 ```
 
+`scripts/worker_desktop_app.py` and `scripts/run_worker.py` also auto-load `.cmq_worker.env` from project root, so connection-code secret works even when app is started without `Run Worker.command`.
+
 After launch, use the `Connection Code` tab and paste the encrypted code generated in server admin panel.
 When code is valid, `Connect` becomes active; after connection the same button switches to `Disconnect`.
 Connection-code decryption requires secret from environment:
