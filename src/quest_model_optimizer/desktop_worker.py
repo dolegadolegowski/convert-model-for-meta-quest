@@ -793,8 +793,10 @@ def run_desktop(args: argparse.Namespace) -> int:
                 and self._latest_update_info.available
                 and not self._update_install_in_progress
             )
-            self.install_update_btn.setEnabled(can_install_update)
-            self.action_install_update.setEnabled(can_install_update)
+            if hasattr(self, "install_update_btn"):
+                self.install_update_btn.setEnabled(can_install_update)
+            if hasattr(self, "action_install_update"):
+                self.action_install_update.setEnabled(can_install_update)
 
         def _set_tray_state(self, state_value: str) -> None:
             mapping = {

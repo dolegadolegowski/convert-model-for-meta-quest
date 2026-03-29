@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.45
+
+- Fixed desktop startup crash after preflight checks introduced by update controls initialization order.
+- `_refresh_connect_button_state()` now safely guards update actions/buttons before tray actions are created.
+- Added regression assertion in desktop UI source test for guarded update action access.
+
 ## 0.44
 
 - Added desktop self-update subsystem integrated with GitHub releases.
