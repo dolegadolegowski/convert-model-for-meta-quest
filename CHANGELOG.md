@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0
+
+- Released stable worker version `1.0`.
+- Finalized desktop launcher flow with local secret file support (`.cmq_worker.env`) and safer packaging defaults.
+- Maintained remote worker pipeline compatibility with current `Medical 3D Models` API integration.
+
 ## 0.48
 
 - Added local launcher env-file support: `Run Worker.command` now auto-loads `.cmq_worker.env` when present.
