@@ -14,6 +14,7 @@ from urllib import parse
 
 from .remote_client import ApiRequestError, RemoteWorkerClient
 from .worker_models import JobClaim
+from .task_dispatcher import dispatch_claim_processing
 from .worker_processor import PipelineProcessor
 from .worker_security import compute_sha256, validate_download_file
 from .worker_summary import build_geometry_summary
@@ -474,7 +475,23 @@ class WorkerLoop:
             self.current_job_id = None
             return
 
-        outcome = self.processor.process(download_path, output_path, report_path)
+        try:
+            outcome = dispatch_claim_processing(self.processor, claim, download_path, output_path, report_path)
+        except Exception as exc:
+            error_message = f"task dispatch failed: {exc}"
+            self.logger.error("Processing failed for job_id=%s: %s", claim.job_id, error_message)
+            self.observer.set_upload_status(f"{utc_timestamp()} | Upload status: FAILED (processing)")
+            self._retry(
+                lambda: self.client.report_failure(
+                    worker_id=self.worker_id or "",
+                    claim=claim,
+                    error_message=error_message,
+                ),
+                operation_name="report_failure",
+                attempts=5,
+            )
+            self.current_job_id = None
+            return
         if not outcome.success:
             error_message = outcome.error or "unknown processing error"
             self.logger.error("Processing failed for job_id=%s: %s", claim.job_id, error_message)

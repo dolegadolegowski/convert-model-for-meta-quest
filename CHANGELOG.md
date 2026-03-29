@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4
+
+- Added worker task dispatcher to support multiple remote job types from server claims (`convert`, `reduce_size`).
+- Worker now reads `task_type` / `task_params` aliases from claim payload and routes processing accordingly.
+- `reduce_size` jobs now override Blender pipeline face limit per task request, clamped to safe max (400000), and keep GLB output flow unchanged.
+- Added unit coverage for dispatcher parsing/routing and worker-loop handling of supported/unsupported task types.
+
 ## 1.3
 
 - Fixed connection-code decode failures on fresh machines when no local secret env was configured.

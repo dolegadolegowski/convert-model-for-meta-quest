@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +21,12 @@ class JobClaim:
     download_url: str | None
     payload: dict[str, Any]
     lease_token: str | None = None
+
+
+@dataclass(frozen=True)
+class JobTask:
+    task_type: str = "convert"
+    params: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from .runner import detect_blender_executable, run_blender_pipeline
@@ -35,6 +35,12 @@ class PipelineProcessor:
     ) -> None:
         self.blender_exec = detect_blender_executable(blender_exec)
         self.options = options or PipelineOptions()
+
+    def with_option_overrides(self, **overrides: object) -> "PipelineProcessor":
+        return PipelineProcessor(
+            blender_exec=self.blender_exec,
+            options=replace(self.options, **overrides),
+        )
 
     def process(self, input_path: Path, output_path: Path, report_path: Path) -> ProcessingOutcome:
         output_path.parent.mkdir(parents=True, exist_ok=True)

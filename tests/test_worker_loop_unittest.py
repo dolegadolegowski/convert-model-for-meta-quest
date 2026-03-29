@@ -564,5 +564,81 @@ class WorkerLoopTests(unittest.TestCase):
         self.assertGreaterEqual(sleep_values[0], 7.0)
 
 
+class TaskAwareProcessor:
+    def __init__(self) -> None:
+        self.override_calls = []
+
+    def with_option_overrides(self, **overrides):
+        self.override_calls.append(dict(overrides))
+        return SuccessProcessor()
+
+    def process(self, input_path: Path, output_path: Path, report_path: Path) -> ProcessingOutcome:
+        return SuccessProcessor().process(input_path, output_path, report_path)
+
+
+class WorkerLoopTaskDispatchTests(unittest.TestCase):
+    def test_reduce_size_claim_uses_override_before_upload(self) -> None:
+        class ReduceClient(FakeClient):
+            def claim_job(self, worker_id: str, wait_seconds: int = 30):
+                self.claim_count += 1
+                if self.claim_count > 1:
+                    return None
+                return JobClaim(
+                    job_id="job-reduce-1",
+                    input_filename="reduce.obj",
+                    download_url=None,
+                    payload={"task_type": "reduce_size", "task_params": {"target_triangles": 280000}},
+                )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            observer = Observer()
+            client = ReduceClient()
+            processor = TaskAwareProcessor()
+            loop = WorkerLoop(
+                client=client,
+                processor=processor,
+                work_root=Path(temp_dir),
+                logger=logging.getLogger("worker-loop-reduce-size"),
+                observer=observer,
+                config=LoopConfig(once=True),
+            )
+            rc = loop.run_forever()
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(client.upload_calls, 1)
+        self.assertEqual(len(processor.override_calls), 1)
+        self.assertEqual(processor.override_calls[0]["face_limit"], 280000)
+
+    def test_unsupported_task_reports_failure(self) -> None:
+        class UnsupportedTaskClient(FakeClient):
+            def claim_job(self, worker_id: str, wait_seconds: int = 30):
+                self.claim_count += 1
+                if self.claim_count > 1:
+                    return None
+                return JobClaim(
+                    job_id="job-unsupported-1",
+                    input_filename="bad.obj",
+                    download_url=None,
+                    payload={"task_type": "voxelize"},
+                )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            observer = Observer()
+            client = UnsupportedTaskClient()
+            loop = WorkerLoop(
+                client=client,
+                processor=SuccessProcessor(),
+                work_root=Path(temp_dir),
+                logger=logging.getLogger("worker-loop-unsupported-task"),
+                observer=observer,
+                config=LoopConfig(once=True),
+            )
+            rc = loop.run_forever()
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(client.failure_calls, 1)
+        self.assertTrue(any("FAILED (processing)" in msg for msg in observer.upload))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
