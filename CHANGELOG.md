@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.43
+
+- Hardened `Run Worker.command` for new macOS machines:
+  - auto-detects a supported Python interpreter (`3.10+`) instead of forcing system `/usr/bin/python3`,
+  - recreates `.venv` if it was created with an unsupported Python version,
+  - keeps a clear guided error when no supported Python is available.
+- Updated launcher package install step to use `pip install --no-compile PySide6 keyring`, avoiding known `py_compile` crashes seen on some macOS Python 3.9 setups.
+- Updated launcher README section with the new interpreter-selection and compatibility behavior.
+- Updated launcher unit test expectations for the new bootstrap flow.
+
 ## 0.42
 
 - Added encrypted connection-code flow in desktop worker:

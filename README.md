@@ -254,7 +254,7 @@ If you want one-file launch from Finder, use:
 ```
 
 You can also double-click `Run Worker.command` in Finder.
-On first run it creates `.venv` if missing, installs `PySide6` + `keyring` when needed, and starts the worker UI.
+On first run it auto-detects Python `3.10+`, recreates `.venv` if it was built with an older interpreter, installs `PySide6` + `keyring` (with `--no-compile` for macOS compatibility), and starts the worker UI.
 In normal double-click mode it starts the app in background and closes the Terminal window automatically.
 
 ## Desktop Worker Launcher (no required args)

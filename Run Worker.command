@@ -5,40 +5,113 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR" || exit 1
 
+MIN_PYTHON_MAJOR=3
+MIN_PYTHON_MINOR=10
+
+print_and_wait_then_exit() {
+  local message="$1"
+  echo "$message"
+  echo "Press Enter to close..."
+  read
+  exit 1
+}
+
+python_version_ok() {
+  local pybin="$1"
+  "$pybin" - <<'PY'
+import sys
+sys.exit(0 if sys.version_info >= (3, 10) else 1)
+PY
+}
+
+detect_supported_python() {
+  local requested="${CMQ_PYTHON:-}"
+  if [[ -n "$requested" ]]; then
+    if command -v "$requested" >/dev/null 2>&1 && python_version_ok "$requested"; then
+      command -v "$requested"
+      return 0
+    fi
+    return 1
+  fi
+
+  local candidates=(
+    "/opt/homebrew/bin/python3.13"
+    "/opt/homebrew/bin/python3.12"
+    "/opt/homebrew/bin/python3.11"
+    "/opt/homebrew/bin/python3.10"
+    "/usr/local/bin/python3.13"
+    "/usr/local/bin/python3.12"
+    "/usr/local/bin/python3.11"
+    "/usr/local/bin/python3.10"
+    "python3.13"
+    "python3.12"
+    "python3.11"
+    "python3.10"
+    "python3"
+  )
+
+  local candidate resolved
+  for candidate in "${candidates[@]}"; do
+    if ! command -v "$candidate" >/dev/null 2>&1; then
+      continue
+    fi
+    resolved="$(command -v "$candidate")"
+    if python_version_ok "$resolved"; then
+      echo "$resolved"
+      return 0
+    fi
+  done
+  return 1
+}
+
 echo "[ConvertModelForMetaQuest] Starting desktop worker..."
+
+HOST_PYTHON="$(detect_supported_python)"
+if [[ -z "$HOST_PYTHON" ]]; then
+  print_and_wait_then_exit "[error] Python ${MIN_PYTHON_MAJOR}.${MIN_PYTHON_MINOR}+ not found. Install and retry. Suggested: brew install python@3.11"
+fi
+
+echo "[setup] Using Python: $HOST_PYTHON"
+
+RECREATE_VENV=0
+if [[ -d ".venv" ]]; then
+  if [[ ! -x ".venv/bin/python3" ]]; then
+    RECREATE_VENV=1
+  elif ! python_version_ok ".venv/bin/python3"; then
+    echo "[setup] Existing .venv uses unsupported Python (<${MIN_PYTHON_MAJOR}.${MIN_PYTHON_MINOR}); recreating."
+    RECREATE_VENV=1
+  fi
+fi
+
+if [[ "$RECREATE_VENV" -eq 1 ]]; then
+  rm -rf ".venv"
+fi
 
 if [[ ! -d ".venv" ]]; then
   echo "[setup] Creating virtual environment (.venv)..."
-  if ! /usr/bin/python3 -m venv .venv; then
-    echo "[error] Could not create .venv"
-    echo "Press Enter to close..."
-    read
-    exit 1
+  if ! "$HOST_PYTHON" -m venv .venv; then
+    print_and_wait_then_exit "[error] Could not create .venv"
   fi
 fi
 
 if [[ ! -f ".venv/bin/activate" ]]; then
-  echo "[error] Missing .venv/bin/activate"
-  echo "Press Enter to close..."
-  read
-  exit 1
+  print_and_wait_then_exit "[error] Missing .venv/bin/activate"
 fi
 
 source ".venv/bin/activate"
+VENV_PYTHON=".venv/bin/python3"
 
-if ! python3 -c "import PySide6" >/dev/null 2>&1; then
+if ! "$VENV_PYTHON" -c "import PySide6" >/dev/null 2>&1; then
   echo "[setup] Installing required packages: PySide6 keyring"
-  python3 -m pip install --upgrade pip >/dev/null 2>&1 || true
-  if ! python3 -m pip install PySide6 keyring; then
-    echo "[error] Could not install PySide6/keyring"
-    echo "Press Enter to close..."
-    read
-    exit 1
+  "$VENV_PYTHON" -m pip install --upgrade pip >/dev/null 2>&1 || true
+  # --no-compile avoids known py_compile crashes in some macOS/Python combinations.
+  if ! "$VENV_PYTHON" -m pip install --no-compile PySide6 keyring; then
+    print_and_wait_then_exit "[error] Could not install PySide6/keyring. Ensure Python ${MIN_PYTHON_MAJOR}.${MIN_PYTHON_MINOR}+ and internet access are available."
   fi
 fi
 
 if [[ $# -gt 0 ]]; then
-  python3 scripts/worker_desktop_app.py "$@"
+  "$VENV_PYTHON" scripts/worker_desktop_app.py "$@"
   EXIT_CODE=$?
 
   if [[ $EXIT_CODE -ne 0 ]]; then
@@ -53,7 +126,7 @@ fi
 
 LOG_DIR="${TMPDIR:-/tmp}"
 LOG_FILE="${LOG_DIR%/}/cmq-worker-desktop.log"
-nohup python3 scripts/worker_desktop_app.py >"$LOG_FILE" 2>&1 &
+nohup "$VENV_PYTHON" scripts/worker_desktop_app.py >"$LOG_FILE" 2>&1 &
 WORKER_PID=$!
 disown "$WORKER_PID" 2>/dev/null || true
 sleep 0.2

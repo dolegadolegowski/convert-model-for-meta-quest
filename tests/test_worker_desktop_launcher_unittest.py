@@ -19,8 +19,10 @@ class WorkerDesktopLauncherTests(unittest.TestCase):
         launcher = root / "Run Worker.command"
         content = launcher.read_text(encoding="utf-8")
 
-        self.assertIn("python3 scripts/worker_desktop_app.py", content)
-        self.assertIn("python3 -m pip install PySide6 keyring", content)
+        self.assertIn("detect_supported_python()", content)
+        self.assertIn("python_version_ok()", content)
+        self.assertIn("\"$VENV_PYTHON\" scripts/worker_desktop_app.py", content)
+        self.assertIn("--no-compile PySide6 keyring", content)
         self.assertIn("source \".venv/bin/activate\"", content)
         self.assertIn("sleep 0.7", content)
         self.assertIn("tell application \"Terminal\"", content)
