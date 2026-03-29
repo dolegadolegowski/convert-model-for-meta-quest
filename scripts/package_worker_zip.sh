@@ -22,6 +22,7 @@ rm -f "$ARCHIVE_PATH"
 zip -r "$ARCHIVE_PATH" . \
   -x ".git/*" \
   -x ".venv/*" \
+  -x ".cmq_worker.env" \
   -x "worker_runtime/*" \
   -x "output/*" \
   -x "out/*" \

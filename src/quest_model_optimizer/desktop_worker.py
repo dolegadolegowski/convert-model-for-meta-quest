@@ -6,6 +6,7 @@ import argparse
 from dataclasses import dataclass
 import importlib.util
 import logging
+import os
 import platform
 from pathlib import Path
 import shutil
@@ -113,6 +114,18 @@ def _build_prerequisite_checks(args: argparse.Namespace) -> list[PrerequisiteChe
             return False, "Python package 'keyring' is not installed. Secure token storage will be unavailable."
         return True, "keyring package detected for secure token storage."
 
+    def check_connection_code_secret() -> tuple[bool, str]:
+        secret_primary = str(os.getenv("CMQ_CONNECTION_CODE_SECRET", "")).strip()
+        secret_legacy = str(os.getenv("WORKER_CONNECTION_CODE_SHARED_SECRET", "")).strip()
+        if secret_primary:
+            return True, "Connection-code secret loaded from CMQ_CONNECTION_CODE_SECRET."
+        if secret_legacy:
+            return True, "Connection-code secret loaded from WORKER_CONNECTION_CODE_SHARED_SECRET (legacy)."
+        return (
+            False,
+            "Connection-code secret is not set. Manual Config tab still works, but Connection Code tab requires secret.",
+        )
+
     def check_blender() -> tuple[bool, str]:
         candidate = detect_blender_executable(getattr(args, "blender_exec", None))
         resolved = _resolve_executable(candidate)
@@ -172,6 +185,15 @@ def _build_prerequisite_checks(args: argparse.Namespace) -> list[PrerequisiteChe
             required=False,
             install_hint="Run: python3 -m pip install keyring",
             runner=check_keyring,
+        ),
+        PrerequisiteCheck(
+            key="connection_code_secret",
+            name="Connection code secret",
+            required=False,
+            install_hint=(
+                "Set CMQ_CONNECTION_CODE_SECRET in your environment (or create .cmq_worker.env for Run Worker.command)."
+            ),
+            runner=check_connection_code_secret,
         ),
         PrerequisiteCheck(
             key="blender_executable",

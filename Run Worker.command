@@ -7,6 +7,7 @@ cd "$SCRIPT_DIR" || exit 1
 
 MIN_PYTHON_MAJOR=3
 MIN_PYTHON_MINOR=10
+LOCAL_ENV_FILE=".cmq_worker.env"
 
 print_and_wait_then_exit() {
   local message="$1"
@@ -65,6 +66,17 @@ detect_supported_python() {
 }
 
 echo "[ConvertModelForMetaQuest] Starting desktop worker..."
+
+if [[ -f "$LOCAL_ENV_FILE" ]]; then
+  set -a
+  source "$LOCAL_ENV_FILE"
+  set +a
+  echo "[setup] Loaded local env from $LOCAL_ENV_FILE"
+fi
+
+if [[ -z "${CMQ_CONNECTION_CODE_SECRET:-}" && -z "${WORKER_CONNECTION_CODE_SHARED_SECRET:-}" ]]; then
+  echo "[info] Connection Code secret not set. Set CMQ_CONNECTION_CODE_SECRET (or legacy WORKER_CONNECTION_CODE_SHARED_SECRET) to use Connection Code tab."
+fi
 
 HOST_PYTHON="$(detect_supported_python)"
 if [[ -z "$HOST_PYTHON" ]]; then

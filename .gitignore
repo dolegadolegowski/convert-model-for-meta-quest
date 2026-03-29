@@ -9,5 +9,6 @@ output/
 reports/
 dist/
 worker_runtime/
+.cmq_worker.env
 *.blend1
 *.blend2

@@ -256,6 +256,7 @@ If you want one-file launch from Finder, use:
 You can also double-click `Run Worker.command` in Finder.
 On first run it auto-detects Python `3.10+`, recreates `.venv` if it was built with an older interpreter, installs `PySide6` + `keyring` (with `--no-compile` for macOS compatibility), and starts the worker UI.
 In normal double-click mode it starts the app in background and closes the Terminal window automatically.
+If `.cmq_worker.env` exists in project root, launcher auto-loads it before app start (recommended place for local `CMQ_CONNECTION_CODE_SECRET`).
 
 ## Desktop Worker Launcher (no required args)
 Use the single-file desktop launcher:
@@ -268,6 +269,12 @@ After launch, use the `Connection Code` tab and paste the encrypted code generat
 When code is valid, `Connect` becomes active; after connection the same button switches to `Disconnect`.
 Connection-code decryption requires secret from environment:
 `CMQ_CONNECTION_CODE_SECRET` (legacy fallback: `WORKER_CONNECTION_CODE_SHARED_SECRET`).
+Recommended for Finder launch:
+
+```bash
+cp .cmq_worker.env.example .cmq_worker.env
+# edit .cmq_worker.env and set real shared secret value from server
+```
 
 Manual entry is still available in the `Manual Config` tab (server URL, token, worker name, poll wait, download limit, work dir).
 Both code-based and manual settings are persisted with `QSettings` and reused on next launch.
@@ -317,6 +324,7 @@ At startup the desktop worker now opens a loading dialog that verifies required 
 - Blender executable availability
 - Writable worker runtime directory
 - `keyring` package (optional, for secure token storage)
+- Connection-code secret (optional, required only for `Connection Code` tab)
 
 Each check is displayed with `OK` or `NOT FOUND`.  
 If a prerequisite is missing, the dialog shows an English installation/fix instruction (for example Blender install commands).

@@ -39,6 +39,7 @@ class WorkerDesktopLauncherTests(unittest.TestCase):
         self.assertIn("zip -r", content)
         self.assertIn("worker_runtime/*", content)
         self.assertIn(".venv/*", content)
+        self.assertIn(".cmq_worker.env", content)
 
     def test_security_scan_script_exists_and_is_executable(self) -> None:
         root = Path(__file__).resolve().parents[1]

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.48
+
+- Added local launcher env-file support: `Run Worker.command` now auto-loads `.cmq_worker.env` when present.
+- Added clear startup hint when connection-code secret is missing, so users can fix `Invalid code, missing connection code secret` quickly.
+- Excluded `.cmq_worker.env` from repository and ZIP packaging output to reduce accidental secret leaks.
+- Added `.cmq_worker.env.example` template file for safe local setup.
+- Extended desktop startup checks with optional `Connection code secret` status line.
+- Added launcher test coverage for `.cmq_worker.env` packaging exclusion.
+
 ## 0.47
 
 - Switched project repository visibility to `PUBLIC` on GitHub.
