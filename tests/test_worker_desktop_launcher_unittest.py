@@ -40,6 +40,19 @@ class WorkerDesktopLauncherTests(unittest.TestCase):
         self.assertIn("worker_runtime/*", content)
         self.assertIn(".venv/*", content)
 
+    def test_security_scan_script_exists_and_is_executable(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        script = root / "scripts" / "security_scan.sh"
+        self.assertTrue(script.exists())
+
+        mode = script.stat().st_mode
+        self.assertTrue(bool(mode & stat.S_IXUSR))
+
+        content = script.read_text(encoding="utf-8")
+        self.assertIn("git rev-list --all", content)
+        self.assertIn("git grep -n -I -E", content)
+        self.assertIn("rg -n -I --hidden -S", content)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

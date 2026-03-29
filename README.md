@@ -266,6 +266,8 @@ python3 scripts/worker_desktop_app.py
 
 After launch, use the `Connection Code` tab and paste the encrypted code generated in server admin panel.
 When code is valid, `Connect` becomes active; after connection the same button switches to `Disconnect`.
+Connection-code decryption requires secret from environment:
+`CMQ_CONNECTION_CODE_SECRET` (legacy fallback: `WORKER_CONNECTION_CODE_SHARED_SECRET`).
 
 Manual entry is still available in the `Manual Config` tab (server URL, token, worker name, poll wait, download limit, work dir).
 Both code-based and manual settings are persisted with `QSettings` and reused on next launch.
@@ -283,6 +285,16 @@ Tray menu exposes `Reconnect`, `Logs`, and `Quit`.
 - During ZIP update, local runtime data is preserved (`.venv`, `worker_runtime`, `dist` are not overwritten).
 - Saved settings and tokens are preserved automatically because they are stored in `QSettings` + keyring outside project files.
 - After successful update app restarts automatically.
+
+### Security scan before each release/iteration
+
+Run:
+
+```bash
+./scripts/security_scan.sh
+```
+
+This scan checks tracked files and full git history for common leaked credentials (GitHub/OpenAI/AWS token patterns, private-key headers, bearer secrets).
 
 ## Packaging ZIP for another computer
 

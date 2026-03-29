@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.47
+
+- Switched project repository visibility to `PUBLIC` on GitHub.
+- Removed hardcoded connection-code shared secret from source code.
+- Connection-code crypto key is now loaded from environment (`CMQ_CONNECTION_CODE_SECRET`, legacy fallback `WORKER_CONNECTION_CODE_SHARED_SECRET`) and never stored in repository files.
+- Added security scan script `scripts/security_scan.sh` that checks both worktree and full git history for high-confidence credential leak patterns.
+- Added tests for connection-code secret requirement and security scan script presence/executability.
+
 ## 0.46
 
 - Improved desktop updater UX for repositories without published GitHub Releases.

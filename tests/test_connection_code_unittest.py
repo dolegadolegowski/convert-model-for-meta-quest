@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from quest_model_optimizer.connection_code import (
     ConnectionCodeError,
@@ -13,26 +14,40 @@ from quest_model_optimizer.connection_code import (
 
 class ConnectionCodeTests(unittest.TestCase):
     def test_valid_code_roundtrip(self) -> None:
+        shared_secret = "unit-test-secret"
         payload = {
             "server_url": "https://medical.example.com",
             "worker_token": "token-123",
             "worker_name": "Local Worker",
             "runtime_config": {"poll_wait_seconds": 30},
         }
-        code = encode_connection_code(payload)
-        decoded = decode_connection_code(code)
+        code = encode_connection_code(payload, shared_secret=shared_secret)
+        decoded = decode_connection_code(code, shared_secret=shared_secret)
         self.assertEqual(decoded["server_url"], payload["server_url"])
         self.assertEqual(decoded["worker_token"], payload["worker_token"])
         self.assertEqual(decoded["worker_name"], payload["worker_name"])
 
     def test_invalid_code_missing_required_field(self) -> None:
+        shared_secret = "unit-test-secret"
         payload = {
             "server_url": "https://medical.example.com",
             "worker_token": "token-123",
         }
-        code = encode_connection_code(payload)
+        code = encode_connection_code(payload, shared_secret=shared_secret)
         with self.assertRaises(ConnectionCodeError):
-            decode_connection_code(code)
+            decode_connection_code(code, shared_secret=shared_secret)
+
+    def test_decode_requires_secret_when_env_missing(self) -> None:
+        shared_secret = "unit-test-secret"
+        payload = {
+            "server_url": "https://medical.example.com",
+            "worker_token": "token-123",
+            "worker_name": "Local Worker",
+        }
+        code = encode_connection_code(payload, shared_secret=shared_secret)
+        with mock.patch.dict("os.environ", {"CMQ_CONNECTION_CODE_SECRET": "", "WORKER_CONNECTION_CODE_SHARED_SECRET": ""}):
+            with self.assertRaises(ConnectionCodeError):
+                decode_connection_code(code, shared_secret=None)
 
     def test_connect_button_state_transitions(self) -> None:
         enabled, label = connect_button_state(connected=False, config_valid=False)

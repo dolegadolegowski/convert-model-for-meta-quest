@@ -4,12 +4,14 @@ import base64
 import hashlib
 import hmac
 import json
+import os
 import secrets
 import struct
 from typing import Any
 
 CONNECTION_CODE_VERSION = 1
-WORKER_CONNECTION_CODE_SHARED_SECRET = "medical3d-worker-code-v1"
+CONNECTION_CODE_SECRET_ENV = "CMQ_CONNECTION_CODE_SECRET"
+CONNECTION_CODE_SECRET_ENV_LEGACY = "WORKER_CONNECTION_CODE_SHARED_SECRET"
 _NONCE_SIZE = 16
 _MAC_SIZE = 32
 _REQUIRED_FIELDS = ("server_url", "worker_token", "worker_name")
@@ -19,10 +21,26 @@ class ConnectionCodeError(ValueError):
     pass
 
 
-def _derive_key(*, shared_secret: str = WORKER_CONNECTION_CODE_SHARED_SECRET) -> bytes:
-    secret = str(shared_secret or "").strip()
+def _resolve_shared_secret(explicit_secret: str | None) -> str:
+    if explicit_secret is not None:
+        value = str(explicit_secret).strip()
+        if value:
+            return value
+    env_value = str(os.getenv(CONNECTION_CODE_SECRET_ENV, "")).strip()
+    if env_value:
+        return env_value
+    legacy_env_value = str(os.getenv(CONNECTION_CODE_SECRET_ENV_LEGACY, "")).strip()
+    if legacy_env_value:
+        return legacy_env_value
+    raise ConnectionCodeError(
+        f"Missing connection code secret. Set env {CONNECTION_CODE_SECRET_ENV}."
+    )
+
+
+def _derive_key(*, shared_secret: str | None = None) -> bytes:
+    secret = _resolve_shared_secret(shared_secret)
     if not secret:
-        raise ConnectionCodeError("Missing connection code secret")
+        raise ConnectionCodeError(f"Missing connection code secret. Set env {CONNECTION_CODE_SECRET_ENV}.")
     return hashlib.sha256(secret.encode("utf-8")).digest()
 
 
@@ -42,7 +60,7 @@ def _xor_bytes(data: bytes, stream: bytes) -> bytes:
     return bytes(a ^ b for a, b in zip(data, stream))
 
 
-def encode_connection_code(payload: dict[str, Any], *, shared_secret: str = WORKER_CONNECTION_CODE_SHARED_SECRET) -> str:
+def encode_connection_code(payload: dict[str, Any], *, shared_secret: str | None = None) -> str:
     key = _derive_key(shared_secret=shared_secret)
     plaintext = json.dumps(payload, separators=(",", ":"), sort_keys=True, ensure_ascii=True).encode("utf-8")
     nonce = secrets.token_bytes(_NONCE_SIZE)
@@ -53,7 +71,7 @@ def encode_connection_code(payload: dict[str, Any], *, shared_secret: str = WORK
     return base64.urlsafe_b64encode(blob).decode("ascii").rstrip("=")
 
 
-def decode_connection_code(code: str, *, shared_secret: str = WORKER_CONNECTION_CODE_SHARED_SECRET) -> dict[str, Any]:
+def decode_connection_code(code: str, *, shared_secret: str | None = None) -> dict[str, Any]:
     raw = str(code or "").strip()
     if not raw:
         raise ConnectionCodeError("Connection code is empty")
