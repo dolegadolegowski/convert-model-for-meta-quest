@@ -883,6 +883,14 @@ def run_desktop(args: argparse.Namespace) -> int:
                 self._refresh_connect_button_state()
                 return
 
+            if info.status_message:
+                self.version_label.setText(f"Version {info.current_version} | {info.status_message}")
+                self._on_log(f"Update status: {info.status_message}")
+                if user_initiated:
+                    QMessageBox.information(self, "Update status", info.status_message)
+                self._refresh_connect_button_state()
+                return
+
             if info.available and info.latest_version:
                 release_label = info.release_name or info.latest_version
                 self.version_label.setText(

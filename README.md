@@ -276,6 +276,7 @@ Tray menu exposes `Reconnect`, `Logs`, and `Quit`.
 - App checks GitHub for updates shortly after startup and shows status next to current version.
 - Use `Check Updates` (window button or tray menu) to force manual check.
 - If newer version is available, `Install Update` becomes active.
+- If repo has no published GitHub Release yet, app shows informational status instead of an error.
 - Update source:
   - Git checkout: app runs `git pull --ff-only`.
   - Non-git package: app downloads latest GitHub release ZIP and overlays project files.

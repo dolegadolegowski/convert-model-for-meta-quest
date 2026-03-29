@@ -10,6 +10,7 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
+from urllib import error
 from urllib import request
 
 
@@ -26,6 +27,7 @@ class UpdateInfo:
     download_url: str | None
     release_name: str | None
     error: str | None = None
+    status_message: str | None = None
 
 
 @dataclass
@@ -121,6 +123,28 @@ def check_for_updates(
     try:
         with request.urlopen(req, timeout=max(3, int(timeout_seconds))) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
+    except error.HTTPError as exc:
+        if int(getattr(exc, "code", 0)) == 404:
+            return UpdateInfo(
+                current_version=current_version,
+                latest_version=None,
+                available=False,
+                html_url=None,
+                download_url=None,
+                release_name=None,
+                error=None,
+                status_message="No published GitHub release found for this repository yet.",
+            )
+        return UpdateInfo(
+            current_version=current_version,
+            latest_version=None,
+            available=False,
+            html_url=None,
+            download_url=None,
+            release_name=None,
+            error=f"HTTP {exc.code}: {exc.reason}",
+            status_message=None,
+        )
     except Exception as exc:
         return UpdateInfo(
             current_version=current_version,
@@ -130,12 +154,24 @@ def check_for_updates(
             download_url=None,
             release_name=None,
             error=str(exc),
+            status_message=None,
         )
 
     latest_version = normalize_version_text(payload.get("tag_name") or payload.get("name"))
     html_url = str(payload.get("html_url", "")).strip() or None
     release_name = str(payload.get("name", "")).strip() or latest_version
     download_url = _select_download_url(payload)
+    if not latest_version:
+        return UpdateInfo(
+            current_version=current_version,
+            latest_version=None,
+            available=False,
+            html_url=html_url,
+            download_url=download_url,
+            release_name=release_name,
+            error=None,
+            status_message="Latest release exists but has an unrecognized version tag format.",
+        )
     return UpdateInfo(
         current_version=current_version,
         latest_version=latest_version,
@@ -144,6 +180,7 @@ def check_for_updates(
         download_url=download_url,
         release_name=release_name,
         error=None,
+        status_message=None,
     )
 
 
@@ -250,4 +287,3 @@ def install_update(
         installed_version=installed_version,
         message=f"Updated from {previous_version} to {installed_version} via {mode}.",
     )
-

@@ -6,6 +6,7 @@ import unittest
 import zipfile
 from pathlib import Path
 from unittest import mock
+from urllib import error as urlerror
 
 from quest_model_optimizer.updater import (
     UpdateInfo,
@@ -59,6 +60,20 @@ class UpdaterTests(unittest.TestCase):
         self.assertTrue(info.available)
         self.assertEqual(info.latest_version, "0.44")
         self.assertEqual(info.download_url, "https://example.org/worker.zip")
+
+    def test_check_for_updates_handles_no_release_404_without_error(self) -> None:
+        http_error = urlerror.HTTPError(
+            url="https://api.github.com/repos/org/repo/releases/latest",
+            code=404,
+            msg="Not Found",
+            hdrs=None,
+            fp=io.BytesIO(b"{}"),
+        )
+        with mock.patch("quest_model_optimizer.updater.request.urlopen", side_effect=http_error):
+            info = check_for_updates(current_version="0.45", repo_full_name="org/repo")
+        self.assertFalse(info.available)
+        self.assertIsNone(info.error)
+        self.assertIn("No published GitHub release", str(info.status_message))
 
     def test_install_update_zip_mode_preserves_local_runtime_dirs(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

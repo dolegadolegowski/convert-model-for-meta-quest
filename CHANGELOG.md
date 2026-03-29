@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.46
+
+- Improved desktop updater UX for repositories without published GitHub Releases.
+- `releases/latest` HTTP `404` is now treated as informational update status (`No published GitHub release found`) instead of hard error.
+- Added updater test coverage for `404` no-release scenario.
+- Desktop update status label/log now displays `status_message` from updater responses.
+
 ## 0.45
 
 - Fixed desktop startup crash after preflight checks introduced by update controls initialization order.
