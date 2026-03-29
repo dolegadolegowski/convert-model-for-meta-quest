@@ -12,6 +12,8 @@ from typing import Any
 CONNECTION_CODE_VERSION = 1
 CONNECTION_CODE_SECRET_ENV = "CMQ_CONNECTION_CODE_SECRET"
 CONNECTION_CODE_SECRET_ENV_LEGACY = "WORKER_CONNECTION_CODE_SHARED_SECRET"
+# Compatibility fallback for current Medical 3D Models server deployments.
+CONNECTION_CODE_SECRET_COMPAT = "medical3d-worker-code-v1"
 _NONCE_SIZE = 16
 _MAC_SIZE = 32
 _REQUIRED_FIELDS = ("server_url", "worker_token", "worker_name")
@@ -32,6 +34,8 @@ def _resolve_shared_secret(explicit_secret: str | None) -> str:
     legacy_env_value = str(os.getenv(CONNECTION_CODE_SECRET_ENV_LEGACY, "")).strip()
     if legacy_env_value:
         return legacy_env_value
+    if CONNECTION_CODE_SECRET_COMPAT:
+        return CONNECTION_CODE_SECRET_COMPAT
     raise ConnectionCodeError(
         f"Missing connection code secret. Set env {CONNECTION_CODE_SECRET_ENV}."
     )

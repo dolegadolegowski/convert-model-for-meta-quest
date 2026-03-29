@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3
+
+- Fixed connection-code decode failures on fresh machines when no local secret env was configured.
+- Added compatibility fallback secret (`medical3d-worker-code-v1`) to match current `Medical 3D Models` server default.
+- Updated desktop preflight and launcher messaging to explain compatibility fallback and custom-secret override behavior.
+
 ## 1.2
 
 - Rebranded project naming to `Remote3Dworker` across worker CLI, desktop UI, packaging, updater user-agent, and docs.

@@ -269,8 +269,13 @@ python3 scripts/worker_desktop_app.py
 
 After launch, use the `Connection Code` tab and paste the encrypted code generated in server admin panel.
 When code is valid, `Connect` becomes active; after connection the same button switches to `Disconnect`.
-Connection-code decryption requires secret from environment:
-`CMQ_CONNECTION_CODE_SECRET` (legacy fallback: `WORKER_CONNECTION_CODE_SHARED_SECRET`).
+Connection-code decryption uses this order:
+- `CMQ_CONNECTION_CODE_SECRET`
+- legacy fallback `WORKER_CONNECTION_CODE_SHARED_SECRET`
+- built-in compatibility default `medical3d-worker-code-v1` (for current Medical 3D Models server default)
+
+If your server uses a custom secret, set it in environment:
+
 Recommended for Finder launch:
 
 ```bash

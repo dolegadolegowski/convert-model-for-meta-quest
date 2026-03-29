@@ -37,7 +37,19 @@ class ConnectionCodeTests(unittest.TestCase):
         with self.assertRaises(ConnectionCodeError):
             decode_connection_code(code, shared_secret=shared_secret)
 
-    def test_decode_requires_secret_when_env_missing(self) -> None:
+    def test_decode_uses_compat_secret_when_env_missing(self) -> None:
+        shared_secret = "medical3d-worker-code-v1"
+        payload = {
+            "server_url": "https://medical.example.com",
+            "worker_token": "token-123",
+            "worker_name": "Local Worker",
+        }
+        code = encode_connection_code(payload, shared_secret=shared_secret)
+        with mock.patch.dict("os.environ", {"CMQ_CONNECTION_CODE_SECRET": "", "WORKER_CONNECTION_CODE_SHARED_SECRET": ""}):
+            decoded = decode_connection_code(code, shared_secret=None)
+            self.assertEqual(decoded["server_url"], payload["server_url"])
+
+    def test_decode_custom_secret_still_requires_matching_configuration(self) -> None:
         shared_secret = "unit-test-secret"
         payload = {
             "server_url": "https://medical.example.com",

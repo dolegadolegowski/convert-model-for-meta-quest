@@ -19,7 +19,12 @@ import uuid
 from typing import Callable
 from urllib.parse import urlsplit
 
-from .connection_code import ConnectionCodeError, connect_button_state, decode_connection_code
+from .connection_code import (
+    CONNECTION_CODE_SECRET_COMPAT,
+    ConnectionCodeError,
+    connect_button_state,
+    decode_connection_code,
+)
 from .logging_utils import configure_logging
 from .remote_client import RemoteWorkerClient
 from .runner import detect_blender_executable
@@ -123,6 +128,12 @@ def _build_prerequisite_checks(args: argparse.Namespace) -> list[PrerequisiteChe
             return True, "Connection-code secret loaded from CMQ_CONNECTION_CODE_SECRET."
         if secret_legacy:
             return True, "Connection-code secret loaded from WORKER_CONNECTION_CODE_SHARED_SECRET (legacy)."
+        if str(CONNECTION_CODE_SECRET_COMPAT).strip():
+            return (
+                True,
+                "Connection-code secret using built-in compatibility default. "
+                "Set CMQ_CONNECTION_CODE_SECRET to use your server-specific secret.",
+            )
         return (
             False,
             "Connection-code secret is not set. Manual Config tab still works, but Connection Code tab requires secret.",
@@ -193,7 +204,8 @@ def _build_prerequisite_checks(args: argparse.Namespace) -> list[PrerequisiteChe
             name="Connection code secret",
             required=False,
             install_hint=(
-                "Set CMQ_CONNECTION_CODE_SECRET in your environment (or create .cmq_worker.env for Run Worker.command)."
+                "Set CMQ_CONNECTION_CODE_SECRET in your environment "
+                "(or create .cmq_worker.env for Run Worker.command) to override compatibility default."
             ),
             runner=check_connection_code_secret,
         ),

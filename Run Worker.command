@@ -75,7 +75,7 @@ if [[ -f "$LOCAL_ENV_FILE" ]]; then
 fi
 
 if [[ -z "${CMQ_CONNECTION_CODE_SECRET:-}" && -z "${WORKER_CONNECTION_CODE_SHARED_SECRET:-}" ]]; then
-  echo "[info] Connection Code secret not set. Set CMQ_CONNECTION_CODE_SECRET (or legacy WORKER_CONNECTION_CODE_SHARED_SECRET) to use Connection Code tab."
+  echo "[info] Connection Code secret not set in env. Using built-in compatibility default; set CMQ_CONNECTION_CODE_SECRET (or legacy WORKER_CONNECTION_CODE_SHARED_SECRET) to override."
 fi
 
 HOST_PYTHON="$(detect_supported_python)"
