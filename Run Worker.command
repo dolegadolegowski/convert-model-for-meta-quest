@@ -65,7 +65,7 @@ detect_supported_python() {
   return 1
 }
 
-echo "[ConvertModelForMetaQuest] Starting desktop worker..."
+echo "[Remote3Dworker] Starting desktop worker..."
 
 if [[ -f "$LOCAL_ENV_FILE" ]]; then
   set -a

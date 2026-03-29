@@ -73,7 +73,7 @@ class RemoteClientTests(unittest.TestCase):
             worker_id="worker-a-id",
             transport=FakeTransport(),
         )
-        expected = f"ConvertModelForMetaQuest-Worker/{read_version()}"
+        expected = f"Remote3Dworker-Worker/{read_version()}"
         self.assertEqual(client._headers()["User-Agent"], expected)
 
     def test_register_claim_and_upload(self) -> None:

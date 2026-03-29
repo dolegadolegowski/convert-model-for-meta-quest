@@ -1,4 +1,4 @@
-"""Desktop tray application for ConvertModelForMetaQuest remote worker."""
+"""Desktop tray application for Remote3Dworker."""
 
 from __future__ import annotations
 
@@ -34,9 +34,11 @@ from .version import read_version
 from .worker_loop import LoopConfig, WorkerLoop, WorkerObserver
 from .worker_processor import PipelineOptions, PipelineProcessor
 
-APP_ORG = "ConvertModelForMetaQuest"
+APP_ORG = "Remote3Dworker"
+LEGACY_APP_ORG = "ConvertModelForMetaQuest"
 APP_NAME = "RemoteWorkerDesktop"
-TOKEN_SERVICE = "ConvertModelForMetaQuestWorkerToken"
+TOKEN_SERVICE = "Remote3DworkerWorkerToken"
+LEGACY_TOKEN_SERVICE = "ConvertModelForMetaQuestWorkerToken"
 DEFAULT_MAX_DOWNLOAD_BYTES = 1024 * 1024 * 1024
 MIN_PYTHON_VERSION = (3, 10)
 
@@ -251,6 +253,8 @@ class TokenVault:
             return ""
         try:
             value = self._keyring.get_password(TOKEN_SERVICE, self._key(server_url))
+            if not value:
+                value = self._keyring.get_password(LEGACY_TOKEN_SERVICE, self._key(server_url))
         except Exception:
             return ""
         return str(value or "").strip()
@@ -299,7 +303,7 @@ def normalize_server_url(raw_url: str) -> str:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="ConvertModelForMetaQuest desktop worker launcher",
+        description="Remote3Dworker desktop worker launcher",
     )
     parser.add_argument("--server-url", default="", help="Optional initial server URL")
     parser.add_argument("--token", default="", help="Optional initial worker token")
@@ -516,7 +520,7 @@ def run_desktop(args: argparse.Namespace) -> int:
     class MainWindow(QMainWindow):
         def __init__(self, preflight_results: list[PrerequisiteResult] | None = None) -> None:
             super().__init__()
-            self.setWindowTitle(f"ConvertModelForMetaQuest Worker v{read_version()}")
+            self.setWindowTitle(f"Remote3Dworker v{read_version()}")
             self.resize(860, 600)
 
             self._bridge = EventBridge()
@@ -528,6 +532,7 @@ def run_desktop(args: argparse.Namespace) -> int:
 
             self._vault = TokenVault()
             self._settings = QSettings(APP_ORG, APP_NAME)
+            self._legacy_settings = QSettings(LEGACY_APP_ORG, APP_NAME)
             self._thread: threading.Thread | None = None
             self._loop: WorkerLoop | None = None
             self._stop_event: threading.Event | None = None
@@ -662,7 +667,7 @@ def run_desktop(args: argparse.Namespace) -> int:
 
         def _build_tray(self) -> None:
             self.tray = QSystemTrayIcon(self)
-            self.tray.setToolTip("ConvertModelForMetaQuest Worker")
+            self.tray.setToolTip("Remote3Dworker")
             self.tray.activated.connect(self._on_tray_activated)
 
             menu = QMenu()
@@ -686,6 +691,15 @@ def run_desktop(args: argparse.Namespace) -> int:
             self.tray.setVisible(True)
             self._set_tray_state("disconnected")
 
+        def _setting_value(self, key: str, default: object) -> object:
+            current = self._settings.value(key, None)
+            if current not in (None, ""):
+                return current
+            legacy = self._legacy_settings.value(key, None)
+            if legacy not in (None, ""):
+                return legacy
+            return default
+
         def _load_settings(self) -> None:
             default_worker_name = str(args.worker_name or "Local Worker").strip() or "Local Worker"
             defaults = DesktopSettings(
@@ -696,13 +710,13 @@ def run_desktop(args: argparse.Namespace) -> int:
                 max_download_bytes=max(1, int(args.max_download_bytes or DEFAULT_MAX_DOWNLOAD_BYTES)),
                 work_dir=str(args.work_dir or "worker_runtime").strip() or "worker_runtime",
             )
-            server_url = str(self._settings.value("server_url", defaults.server_url) or "").strip()
-            worker_name = str(self._settings.value("worker_name", defaults.worker_name) or defaults.worker_name).strip() or default_worker_name
-            worker_id = str(self._settings.value("worker_id", defaults.worker_id) or "").strip()
-            poll_wait = int(self._settings.value("poll_wait", defaults.poll_wait) or defaults.poll_wait)
-            max_download_bytes = int(self._settings.value("max_download_bytes", defaults.max_download_bytes) or defaults.max_download_bytes)
-            work_dir = str(self._settings.value("work_dir", defaults.work_dir) or defaults.work_dir).strip() or "worker_runtime"
-            connection_code = str(self._settings.value("connection_code", "") or "").strip()
+            server_url = str(self._setting_value("server_url", defaults.server_url) or "").strip()
+            worker_name = str(self._setting_value("worker_name", defaults.worker_name) or defaults.worker_name).strip() or default_worker_name
+            worker_id = str(self._setting_value("worker_id", defaults.worker_id) or "").strip()
+            poll_wait = int(self._setting_value("poll_wait", defaults.poll_wait) or defaults.poll_wait)
+            max_download_bytes = int(self._setting_value("max_download_bytes", defaults.max_download_bytes) or defaults.max_download_bytes)
+            work_dir = str(self._setting_value("work_dir", defaults.work_dir) or defaults.work_dir).strip() or "worker_runtime"
+            connection_code = str(self._setting_value("connection_code", "") or "").strip()
 
             if defaults.server_url:
                 server_url = defaults.server_url
@@ -710,6 +724,8 @@ def run_desktop(args: argparse.Namespace) -> int:
                 self._vault.save(server_url, str(args.token).strip())
 
             token_value = self._vault.load(server_url)
+            if server_url and token_value:
+                self._vault.save(server_url, token_value)
 
             self.server_input.setText(server_url)
             self.token_input.setText(token_value)
@@ -831,7 +847,7 @@ def run_desktop(args: argparse.Namespace) -> int:
             self.status_dot.setStyleSheet(f"color:{color};font-size:20px;")
             self.status_label.setText(label)
             self.tray.setIcon(self._build_icon(color))
-            self.tray.setToolTip(f"ConvertModelForMetaQuest Worker - {label}")
+            self.tray.setToolTip(f"Remote3Dworker - {label}")
 
         def _on_state(self, state_value: str) -> None:
             self._state = str(state_value or "disconnected")
@@ -920,7 +936,7 @@ def run_desktop(args: argparse.Namespace) -> int:
                 )
                 self._on_log(f"Update available: {release_label} ({info.latest_version}).")
                 self.tray.showMessage(
-                    "ConvertModelForMetaQuest",
+                    "Remote3Dworker",
                     f"New version available: {info.latest_version}",
                     QSystemTrayIcon.Information,
                     3500,

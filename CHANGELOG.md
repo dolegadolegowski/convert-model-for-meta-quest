@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2
+
+- Rebranded project naming to `Remote3Dworker` across worker CLI, desktop UI, packaging, updater user-agent, and docs.
+- Updated default updater repository to `dolegadolegowski/Remote3Dworker`.
+- Added desktop settings/token backward compatibility fallback for legacy app keys:
+  - legacy `QSettings` org: `ConvertModelForMetaQuest`
+  - legacy keyring service: `ConvertModelForMetaQuestWorkerToken`
+- Updated unit tests for renamed worker archive and user-agent strings.
+
 ## 1.1
 
 - Fixed connection-code secret loading when worker is started outside Finder launcher.

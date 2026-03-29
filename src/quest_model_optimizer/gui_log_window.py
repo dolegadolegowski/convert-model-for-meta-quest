@@ -32,7 +32,7 @@ class _QueueLogHandler(logging.Handler):
 class GuiLogWindow(WorkerObserver):
     """GUI observer implementation receiving events from worker thread."""
 
-    def __init__(self, title: str = "ConvertModelForMetaQuest Worker", app_version: str | None = None) -> None:
+    def __init__(self, title: str = "Remote3Dworker", app_version: str | None = None) -> None:
         import tkinter as tk
         from tkinter import scrolledtext
 

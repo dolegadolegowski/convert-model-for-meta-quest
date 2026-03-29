@@ -26,7 +26,7 @@ class PipelineOptions:
 
 
 class PipelineProcessor:
-    """Runs the current ConvertModelForMetaQuest pipeline as-is."""
+    """Runs the current Remote3Dworker pipeline as-is."""
 
     def __init__(
         self,

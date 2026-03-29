@@ -1,4 +1,4 @@
-# Convert Model For Meta Quest
+# Remote3Dworker
 
 Python project that runs Blender in background mode to import 3D models, check face count, reduce geometry when needed, run mesh cleanup operations, and export `.glb` output.
 
@@ -315,7 +315,7 @@ To build a portable worker source package (without local `.venv` and runtime fol
 
 The archive is created in `dist/` as:
 
-`ConvertModelForMetaQuest-worker-v<VERSION>.zip`
+`Remote3Dworker-worker-v<VERSION>.zip`
 
 ### Startup prerequisite checks (desktop app)
 

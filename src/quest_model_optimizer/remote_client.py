@@ -320,7 +320,7 @@ class RemoteWorkerClient:
         self.allow_insecure_http = allow_insecure_http
         self.heartbeat_interval_hint = heartbeat_interval_hint
         self.lease_timeout_hint = lease_timeout_hint
-        self.user_agent = f"ConvertModelForMetaQuest-Worker/{read_version()}"
+        self.user_agent = f"Remote3Dworker-Worker/{read_version()}"
         self.transport: TransportProtocol = transport or UrllibTransport(
             timeout=self.http_timeout_seconds,
             download_timeout=self.download_timeout_seconds,
@@ -488,7 +488,7 @@ class RemoteWorkerClient:
         payload = {
             "worker_id": self.worker_id,
             "worker_name": self.worker_name,
-            "capabilities": {"pipeline": "ConvertModelForMetaQuest", "format": "GLB"},
+            "capabilities": {"pipeline": "Remote3Dworker", "format": "GLB"},
         }
         if self.heartbeat_interval_hint is not None:
             payload["heartbeat_interval"] = int(self.heartbeat_interval_hint)

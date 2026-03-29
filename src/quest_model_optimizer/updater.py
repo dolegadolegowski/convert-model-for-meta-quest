@@ -14,7 +14,7 @@ from urllib import error
 from urllib import request
 
 
-DEFAULT_GITHUB_REPO = "dolegadolegowski/convert-model-for-meta-quest"
+DEFAULT_GITHUB_REPO = "dolegadolegowski/Remote3Dworker"
 DEFAULT_TIMEOUT_SECONDS = 20
 
 
@@ -117,7 +117,7 @@ def check_for_updates(
     api_url = f"https://api.github.com/repos/{repo_full_name}/releases/latest"
     headers = {
         "Accept": "application/vnd.github+json",
-        "User-Agent": "ConvertModelForMetaQuest-Updater",
+        "User-Agent": "Remote3Dworker-Updater",
     }
     req = request.Request(api_url, headers=headers, method="GET")
     try:
@@ -223,7 +223,7 @@ def _install_via_git(project_root: Path) -> None:
 def _install_via_zip(project_root: Path, download_url: str, timeout_seconds: int) -> None:
     req = request.Request(
         download_url,
-        headers={"User-Agent": "ConvertModelForMetaQuest-Updater"},
+        headers={"User-Agent": "Remote3Dworker-Updater"},
         method="GET",
     )
     with tempfile.TemporaryDirectory(prefix="cmq-update-") as tmp:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Desktop launcher for ConvertModelForMetaQuest remote worker."""
+"""Desktop launcher for Remote3Dworker."""
 
 from __future__ import annotations
 

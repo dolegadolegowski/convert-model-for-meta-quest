@@ -14,7 +14,7 @@ fi
 DIST_DIR="$ROOT_DIR/dist"
 mkdir -p "$DIST_DIR"
 
-ARCHIVE_NAME="ConvertModelForMetaQuest-worker-v${VERSION}.zip"
+ARCHIVE_NAME="Remote3Dworker-worker-v${VERSION}.zip"
 ARCHIVE_PATH="$DIST_DIR/$ARCHIVE_NAME"
 
 rm -f "$ARCHIVE_PATH"

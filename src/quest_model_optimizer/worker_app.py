@@ -1,4 +1,4 @@
-"""CLI app for running ConvertModelForMetaQuest as a remote worker."""
+"""CLI app for running Remote3Dworker as a remote worker."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ DEFAULT_RECONNECT_AFTER_FAILURES = 3
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run ConvertModelForMetaQuest as remote worker")
+    parser = argparse.ArgumentParser(description="Run Remote3Dworker as remote worker")
     parser.add_argument("--server-url", default=os.getenv("SERVER_URL"), help="HTTPS URL of Medical 3D Models API")
     parser.add_argument("--token", default=os.getenv("WORKER_TOKEN"), help="Worker auth token")
     parser.add_argument(

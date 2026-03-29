@@ -52,7 +52,7 @@ class UpdaterTests(unittest.TestCase):
           "html_url": "https://github.com/org/repo/releases/tag/v0.44",
           "assets": [
             {"name": "something.txt", "browser_download_url": "https://example.org/ignore.txt"},
-            {"name": "ConvertModelForMetaQuest-worker-v0.44.zip", "browser_download_url": "https://example.org/worker.zip"}
+            {"name": "Remote3Dworker-worker-v0.44.zip", "browser_download_url": "https://example.org/worker.zip"}
           ]
         }"""
         with mock.patch("quest_model_optimizer.updater.request.urlopen", return_value=_FakeResponse(payload)):
